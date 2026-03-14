@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-// ─── Storage ────────────────────────────────────────────────────
-const store = {
-  async get(k) { try { if (window.storage?.get) { const r = await window.storage.get(k); return r?.value??null; } } catch {} try { return localStorage?.getItem(k)??null; } catch { return null; } },
-  async set(k, v) { try { if (window.storage?.set) { await window.storage.set(k, v); return; } } catch {} try { localStorage?.setItem(k, v); } catch {} },
-};
+import store from "./services/storage.js";
+import { computeShiftMetrics, getShiftAlertLevel, THRESHOLDS } from "./utils/shiftMetrics.js";
+import { createShift as addShift, updateShift as editShift, deleteShift as removeShift } from "./services/shiftService.js";
 // ─── Theme ──────────────────────────────────────────────────────
 const C = {
   bg: "#F5F0E8", card: "#FFFFFF", green: "#2D5A3D", greenLight: "#3A7550",
@@ -18,6 +16,7 @@ const fontMono = "'DM Mono', 'SF Mono', monospace";
 const fontSans = "'DM Sans', 'Helvetica Neue', sans-serif";
 const CATEGORIES = ["Coffee", "Pastry", "Kombucha"];
 const UNITS = ["kg", "L", "unit", "g", "mL", "cl"];
+const PERIODS = [{ value: "morning", label: "Morning" }, { value: "afternoon", label: "Afternoon" }, { value: "full_day", label: "Full Day" }];
 const uid = () => Math.random().toString(36).slice(2, 10);
 const catColors = { "Coffee": { bg: "#F0E8D8", color: "#7A5C2E" }, "Pastry": { bg: "#F5E8EE", color: "#8A3A5C" }, "Kombucha": { bg: "#E4F0E8", color: "#2D5A3D" } };
 const calcRecipeCost = (recipe, ingredients) => {
@@ -130,7 +129,7 @@ const DEFAULT_RECIPES = [
   { id: "r18", name: "Kombucha Ginger-Lemon", category: "Kombucha", portions: 10, targetMargin: 80, sellingPrice: 3.50, items: [{ ingredientId: "10", qty: 0.015 }, { ingredientId: "4", qty: 0.08 }, { ingredientId: "11", qty: 0.3 }, { ingredientId: "12", qty: 0.05 }, { ingredientId: "13", qty: 2 }, { ingredientId: "21", qty: 3.0 }, { ingredientId: "17", qty: 10 }] },
   { id: "r19", name: "Kombucha Lavender", category: "Kombucha", portions: 10, targetMargin: 80, sellingPrice: 3.50, items: [{ ingredientId: "10", qty: 0.015 }, { ingredientId: "4", qty: 0.08 }, { ingredientId: "11", qty: 0.3 }, { ingredientId: "14", qty: 8 }, { ingredientId: "21", qty: 3.0 }, { ingredientId: "17", qty: 10 }] },
 ];
-// ─── Components ─────────────────────────────────────────────────
+// ─── Recipe Components ──────────────────────────────────────────
 function RecipeCard({ recipe, ingredients, onEdit, onDelete }) {
   const unitCost = calcUnitCost(recipe, ingredients);
   const margin = getMargin(recipe.sellingPrice, unitCost);
@@ -203,11 +202,243 @@ function RecipeModal({ open, onClose, recipe, ingredients, onSave }) {
     </Modal>
   );
 }
+// ─── Shift Components ───────────────────────────────────────────
+function ShiftCard({ shift, recipes, ingredients, onEdit, onDelete }) {
+  const metrics = useMemo(() => computeShiftMetrics(shift, recipes, ingredients), [shift, recipes, ingredients]);
+  const alertLevel = getShiftAlertLevel(metrics);
+  const periodLabel = { morning: "Morning", afternoon: "Afternoon", full_day: "Full Day" }[shift.period] || shift.period;
+  const borderColor = alertLevel === "red" ? `${C.red}30` : alertLevel === "amber" ? `${C.amber}30` : C.border;
+  const alertBg = alertLevel === "red" ? C.redPale : alertLevel === "amber" ? C.amberPale : C.greenPale;
+  const alertColor = alertLevel === "red" ? C.red : alertLevel === "amber" ? C.amber : C.green;
+  const totalItems = shift.sales.reduce((sum, s) => sum + s.quantity, 0);
+  const topItem = useMemo(() => {
+    if (shift.sales.length === 0) return null;
+    const top = [...shift.sales].sort((a, b) => b.quantity - a.quantity)[0];
+    const recipe = recipes.find(r => r.id === top.recipe_id);
+    return recipe ? { name: recipe.name, qty: top.quantity } : null;
+  }, [shift.sales, recipes]);
+
+  return (
+    <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${borderColor}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Badge color={alertColor} bg={alertBg}>{periodLabel}</Badge>
+            <span style={{ fontSize: 14 }}>{alertLevel === "green" ? "🟢" : "🔴"}</span>
+          </div>
+          <h4 style={{ fontFamily: font, fontSize: 19, margin: "6px 0 0" }}>
+            {new Date(shift.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
+          </h4>
+          <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>
+            {shift.staff_count} {shift.staff_count > 1 ? "baristas" : "barista"} · {shift.hours_worked}h
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => onEdit(shift)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>✎</button>
+          <button onClick={() => onDelete(shift.id)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: fontSans, fontSize: 12, color: C.red }}>✕</button>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14, padding: "12px 0", borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
+        <Metric label="Revenue" value={metrics.revenue.toFixed(0)} size="small" />
+        <Metric label="Gross P." value={`${metrics.gross_margin_pct.toFixed(1)}`} unit="%" size="small" alert={metrics.gross_margin_pct < THRESHOLDS.MIN_GROSS_MARGIN} />
+        <Metric label="Labor" value={metrics.labor_cost.toFixed(0)} size="small" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>Net profit</span>
+        <span style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 700, color: metrics.is_profitable ? C.green : C.red }}>€{metrics.net_profit.toFixed(0)}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>Rev/labor hr</span>
+        <span style={{ fontFamily: fontMono, fontSize: 14, fontWeight: 600, color: metrics.revenue_per_labor_hour < THRESHOLDS.MIN_REV_PER_LABOR_HOUR ? C.amber : C.green }}>€{metrics.revenue_per_labor_hour.toFixed(1)}</span>
+      </div>
+      {topItem && (
+        <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>
+          Top item: {topItem.name} ×{topItem.qty}
+        </div>
+      )}
+      {alertLevel !== "green" && (
+        <div style={{ marginTop: 10, padding: "8px 10px", background: alertBg, borderRadius: 6, fontFamily: fontSans, fontSize: 11, color: alertColor }}>
+          {!metrics.is_profitable
+            ? "⚠ Unprofitable — labor cost exceeds gross profit"
+            : metrics.gross_margin_pct < THRESHOLDS.MIN_GROSS_MARGIN
+              ? `⚠ Gross margin (${metrics.gross_margin_pct.toFixed(1)}%) below ${THRESHOLDS.MIN_GROSS_MARGIN}%`
+              : `⚠ Rev/hour (€${metrics.revenue_per_labor_hour.toFixed(1)}) below €${THRESHOLDS.MIN_REV_PER_LABOR_HOUR}`
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+function ShiftDashboard({ shifts, recipes, ingredients, onEdit, onDelete, onNew }) {
+  const sorted = useMemo(() => [...shifts].sort((a, b) => new Date(b.date) - new Date(a.date)), [shifts]);
+  const summary = useMemo(() => {
+    let totalMargin = 0, totalRevPerHr = 0, unprofitable = 0, count = 0;
+    for (const s of shifts) {
+      const m = computeShiftMetrics(s, recipes, ingredients);
+      if (m.revenue > 0) { totalMargin += m.gross_margin_pct; totalRevPerHr += m.revenue_per_labor_hour; count++; }
+      if (!m.is_profitable) unprofitable++;
+    }
+    return { total: shifts.length, avgMargin: count > 0 ? totalMargin / count : 0, avgRevPerHr: count > 0 ? totalRevPerHr / count : 0, unprofitable };
+  }, [shifts, recipes, ingredients]);
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+        <Metric label="Shifts logged" value={summary.total} unit="" />
+        <Metric label="Avg net margin" value={summary.avgMargin.toFixed(1)} unit="%" />
+        <Metric label="Avg rev/labor hr" value={`€${summary.avgRevPerHr.toFixed(0)}`} unit="" />
+        <Metric label="Unprofitable" value={summary.unprofitable} unit="" alert={summary.unprofitable > 0} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+        {sorted.map(s => <ShiftCard key={s.id} shift={s} recipes={recipes} ingredients={ingredients} onEdit={onEdit} onDelete={onDelete} />)}
+      </div>
+      {shifts.length === 0 && (
+        <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}>
+          <div style={{ fontFamily: font, fontSize: 20, marginBottom: 8 }}>No shifts logged yet</div>
+          <Btn onClick={onNew}>+ Log a shift</Btn>
+        </div>
+      )}
+    </>
+  );
+}
+function ShiftForm({ shift, recipes, ingredients, onSave, onCancel }) {
+  const blank = { date: new Date().toISOString().slice(0, 10), period: "morning", staff_count: 1, hours_worked: 6, hourly_rate: 5.50, sales: [], notes: "" };
+  const [f, setF] = useState(shift || blank);
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => { setF(shift || blank); }, [shift]);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  const salesMap = useMemo(() => {
+    const m = {};
+    for (const s of f.sales) m[s.recipe_id] = s.quantity;
+    return m;
+  }, [f.sales]);
+
+  const setQty = (recipeId, qty) => {
+    setF(prev => {
+      const existing = prev.sales.find(s => s.recipe_id === recipeId);
+      let newSales;
+      if (existing) {
+        newSales = qty <= 0 ? prev.sales.filter(s => s.recipe_id !== recipeId) : prev.sales.map(s => s.recipe_id === recipeId ? { ...s, quantity: qty } : s);
+      } else if (qty > 0) {
+        newSales = [...prev.sales, { recipe_id: recipeId, quantity: qty }];
+      } else {
+        newSales = prev.sales;
+      }
+      return { ...prev, sales: newSales };
+    });
+  };
+
+  const metrics = useMemo(() => computeShiftMetrics(f, recipes, ingredients), [f, recipes, ingredients]);
+  const alertLevel = getShiftAlertLevel(metrics);
+  const recipesByCategory = useMemo(() => {
+    const grouped = {};
+    for (const cat of CATEGORIES) grouped[cat] = recipes.filter(r => r.category === cat);
+    return grouped;
+  }, [recipes]);
+
+  const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontSans, fontSize: 14, background: C.cream, boxSizing: "border-box" };
+  const labelStyle = { fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 };
+
+  const previewPanel = (
+    <div style={{ position: isMobile ? "static" : "sticky", top: 20 }}>
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${alertLevel === "red" ? `${C.red}30` : alertLevel === "amber" ? `${C.amber}30` : C.border}` }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Live preview</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <Metric label="Revenue" value={metrics.revenue.toFixed(2)} size="small" />
+          <Metric label="COGS" value={metrics.totalCOGS.toFixed(2)} size="small" />
+          <Metric label="Gross profit" value={metrics.gross_profit.toFixed(2)} size="small" />
+          <Metric label="Labor cost" value={metrics.labor_cost.toFixed(2)} size="small" />
+        </div>
+        <div style={{ padding: "12px 0", borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
+          <Metric label="Net profit" value={metrics.net_profit.toFixed(2)} alert={!metrics.is_profitable} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <Metric label="Gross margin" value={metrics.gross_margin_pct.toFixed(1)} unit="%" size="small" alert={metrics.gross_margin_pct < THRESHOLDS.MIN_GROSS_MARGIN} />
+          <Metric label="Rev/labor hr" value={metrics.revenue_per_labor_hour.toFixed(1)} size="small" alert={metrics.revenue_per_labor_hour < THRESHOLDS.MIN_REV_PER_LABOR_HOUR} />
+        </div>
+        {alertLevel !== "green" && metrics.revenue > 0 && (
+          <div style={{ padding: "8px 10px", background: alertLevel === "red" ? C.redPale : C.amberPale, borderRadius: 6, fontFamily: fontSans, fontSize: 11, color: alertLevel === "red" ? C.red : C.amber, marginBottom: 12 }}>
+            {!metrics.is_profitable ? "This shift is unprofitable" : "Margin or efficiency below threshold"}
+          </div>
+        )}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
+        <Btn onClick={() => onSave(f)} disabled={!f.date || f.sales.length === 0}>Save shift</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.green, marginBottom: 16, padding: 0 }}>← Back to shifts</button>
+      <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px", color: C.green }}>{shift ? "Edit shift" : "Log a shift"}</h2>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: 20, alignItems: "start" }}>
+        <div>
+          <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 16 }}>
+            <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Shift details</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <label style={{ display: "block" }}><span style={labelStyle}>Date</span><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} style={inputStyle} /></label>
+              <label style={{ display: "block" }}><span style={labelStyle}>Period</span><select value={f.period} onChange={e => setF({ ...f, period: e.target.value })} style={inputStyle}>{PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
+              <label style={{ display: "block" }}><span style={labelStyle}>Staff count</span><input type="number" min="1" value={f.staff_count} onChange={e => setF({ ...f, staff_count: parseInt(e.target.value) || 1 })} style={{ ...inputStyle, fontFamily: fontMono }} /></label>
+              <label style={{ display: "block" }}><span style={labelStyle}>Hours worked</span><input type="number" min="0" step="0.5" value={f.hours_worked} onChange={e => setF({ ...f, hours_worked: parseFloat(e.target.value) || 0 })} style={{ ...inputStyle, fontFamily: fontMono }} /></label>
+              <label style={{ display: "block" }}><span style={labelStyle}>Hourly rate (€)</span><input type="number" min="0" step="0.10" value={f.hourly_rate} onChange={e => setF({ ...f, hourly_rate: parseFloat(e.target.value) || 0 })} style={{ ...inputStyle, fontFamily: fontMono }} /></label>
+              <label style={{ display: "block" }}><span style={labelStyle}>Notes</span><input value={f.notes || ""} onChange={e => setF({ ...f, notes: e.target.value })} placeholder="E.g. Holiday weekend…" style={inputStyle} /></label>
+            </div>
+          </div>
+          <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}` }}>
+            <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Sales</div>
+            {CATEGORIES.map(cat => {
+              const catRecipes = recipesByCategory[cat] || [];
+              if (catRecipes.length === 0) return null;
+              const cc = catColors[cat] || { bg: C.greenPale, color: C.green };
+              return (
+                <div key={cat} style={{ marginBottom: 16 }}>
+                  <Badge color={cc.color} bg={cc.bg}>{cat}</Badge>
+                  <div style={{ marginTop: 8 }}>
+                    {catRecipes.map(recipe => {
+                      const qty = salesMap[recipe.id] || 0;
+                      return (
+                        <div key={recipe.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <div>
+                            <span style={{ fontFamily: fontSans, fontSize: 13 }}>{recipe.name}</span>
+                            <span style={{ fontFamily: fontMono, fontSize: 11, color: C.textMuted, marginLeft: 8 }}>{recipe.sellingPrice.toFixed(2)}€</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <button onClick={() => setQty(recipe.id, Math.max(0, qty - 1))} style={{ width: 28, height: 28, borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontSize: 16, color: C.textMuted }}>−</button>
+                            <input type="number" min="0" value={qty} onChange={e => setQty(recipe.id, parseInt(e.target.value) || 0)} style={{ width: 48, textAlign: "center", padding: "4px", border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: fontMono, fontSize: 13, background: qty > 0 ? C.greenPale : C.cream }} />
+                            <button onClick={() => setQty(recipe.id, qty + 1)} style={{ width: 28, height: 28, borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontSize: 16, color: C.green }}>+</button>
+                            {qty > 0 && <span style={{ fontFamily: fontMono, fontSize: 11, color: C.green, minWidth: 50, textAlign: "right" }}>{(recipe.sellingPrice * qty).toFixed(2)}€</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {isMobile && <div style={{ marginTop: 20 }}>{previewPanel}</div>}
+        </div>
+        {!isMobile && previewPanel}
+      </div>
+    </div>
+  );
+}
 // ─── App ────────────────────────────────────────────────────────
 const SK = "estudantina-costing-v4";
 export default function App() {
   const [ingredients, setIngredients] = useState(DEFAULT_INGREDIENTS);
   const [recipes, setRecipes] = useState(DEFAULT_RECIPES);
+  const [shifts, setShifts] = useState([]);
+  const [view, setView] = useState("recipes");
+  const [shiftView, setShiftView] = useState("dashboard");
+  const [editingShift, setEditingShift] = useState(null);
   const [filter, setFilter] = useState("All");
   const [showIngModal, setShowIngModal] = useState(false);
   const [recipeModal, setRecipeModal] = useState({ open: false, recipe: null });
@@ -215,49 +446,101 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const stRef = useRef(null);
+
   useEffect(() => {
     (async () => {
-      try { const raw = await store.get(SK); if (raw) { const d = JSON.parse(raw); if (d.ingredients?.length) setIngredients(d.ingredients); if (d.recipes?.length) setRecipes(d.recipes); } } catch (e) { console.warn(e); }
+      try {
+        const raw = await store.get(SK);
+        if (raw) {
+          const d = JSON.parse(raw);
+          if (d.ingredients?.length) setIngredients(d.ingredients);
+          if (d.recipes?.length) setRecipes(d.recipes);
+          if (d.shifts?.length) setShifts(d.shifts);
+        }
+      } catch (e) { console.warn(e); }
       setLoaded(true);
     })();
   }, []);
+
   const persist = useCallback(async () => {
     setSaveStatus("saving");
-    try { await store.set(SK, JSON.stringify({ ingredients, recipes })); setSaveStatus("saved"); } catch { setSaveStatus("error"); }
+    try { await store.set(SK, JSON.stringify({ ingredients, recipes, shifts })); setSaveStatus("saved"); } catch { setSaveStatus("error"); }
     clearTimeout(stRef.current); stRef.current = setTimeout(() => setSaveStatus(null), 2000);
-  }, [ingredients, recipes]);
-  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, loaded, persist]);
+  }, [ingredients, recipes, shifts]);
+
+  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, loaded, persist]);
+
   const filtered = useMemo(() => { let r = recipes; if (filter !== "All") r = r.filter(x => x.category === filter); if (search) r = r.filter(x => x.name.toLowerCase().includes(search.toLowerCase())); return r; }, [recipes, filter, search]);
   const stats = useMemo(() => { let tm = 0, cp = 0, ac = 0; recipes.forEach(r => { const uc = calcUnitCost(r, ingredients); const m = getMargin(r.sellingPrice, uc); if (r.sellingPrice > 0) { tm += m; cp++; } if (m < r.targetMargin && r.sellingPrice > 0) ac++; }); return { avg: cp > 0 ? tm / cp : 0, alerts: ac, total: recipes.length }; }, [recipes, ingredients]);
+
+  const handleSaveShift = (shift) => {
+    if (editingShift) {
+      setShifts(prev => editShift(prev, shift.id, shift));
+    } else {
+      setShifts(prev => addShift(prev, { ...shift, id: uid() }));
+    }
+    setEditingShift(null);
+    setShiftView("dashboard");
+  };
+  const handleDeleteShift = (id) => setShifts(prev => removeShift(prev, id));
+  const handleEditShift = (shift) => { setEditingShift(shift); setShiftView("form"); };
+  const handleNewShift = () => { setEditingShift(null); setShiftView("form"); };
+
+  const tabStyle = (active) => ({
+    padding: "6px 16px", borderRadius: 6, border: "none",
+    background: active ? "#fff" : "transparent",
+    color: active ? C.green : "rgba(255,255,255,0.7)",
+    fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer",
+  });
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: fontSans, color: C.text }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <div style={{ background: C.green, color: "#fff", padding: "24px 24px 20px", borderBottom: "3px solid #1E3D28" }}>
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <h1 style={{ fontFamily: font, fontSize: 28, fontWeight: 400, margin: 0, fontStyle: "italic" }}>Estudantina</h1>
-              <span style={{ fontFamily: fontSans, fontSize: 12, opacity: 0.7, letterSpacing: 1, textTransform: "uppercase" }}>Recipe Costing</span>
+              <div style={{ display: "flex", gap: 2, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 2 }}>
+                <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
+                <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
+              </div>
               <SaveIndicator status={saveStatus} />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Btn variant="secondary" onClick={() => { setIngredients(DEFAULT_INGREDIENTS); setRecipes(DEFAULT_RECIPES); }} style={{ color: "rgba(255,255,255,0.5)", borderColor: "rgba(255,255,255,0.15)", fontSize: 11 }}>↺ Reset</Btn>
-              <Btn variant="secondary" onClick={() => setShowIngModal(true)} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 12 }}>📦 Ingredients ({ingredients.length})</Btn>
-              <Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ New recipe</Btn>
+              {view === "recipes" ? (
+                <>
+                  <Btn variant="secondary" onClick={() => { setIngredients(DEFAULT_INGREDIENTS); setRecipes(DEFAULT_RECIPES); }} style={{ color: "rgba(255,255,255,0.5)", borderColor: "rgba(255,255,255,0.15)", fontSize: 11 }}>↺ Reset</Btn>
+                  <Btn variant="secondary" onClick={() => setShowIngModal(true)} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 12 }}>📦 Ingredients ({ingredients.length})</Btn>
+                  <Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ New recipe</Btn>
+                </>
+              ) : (
+                <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
+              )}
             </div>
           </div>
         </div>
       </div>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 16px 40px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
-          <Metric label="Recipes" value={stats.total} unit="" /><Metric label="Avg. margin" value={stats.avg.toFixed(1)} unit="%" /><Metric label="Alerts" value={stats.alerts} unit="" alert={stats.alerts > 0} />
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <div style={{ display: "flex", gap: 6 }}>{["All", ...CATEGORIES].map(c => <button key={c} onClick={() => setFilter(c)} style={{ padding: "6px 14px", borderRadius: 20, border: filter === c ? "none" : `1px solid ${C.border}`, background: filter === c ? C.green : "transparent", color: filter === c ? "#fff" : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{c}</button>)}</div>
-          <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", border: `1px solid ${C.border}`, borderRadius: 20, fontFamily: fontSans, fontSize: 12, background: C.card, outline: "none", width: 160 }} />
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>{filtered.map(r => <RecipeCard key={r.id} recipe={r} ingredients={ingredients} onEdit={rec => setRecipeModal({ open: true, recipe: rec })} onDelete={id => setRecipes(prev => prev.filter(x => x.id !== id))} />)}</div>
-        {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}><Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ marginTop: 12 }}>+ Create a recipe</Btn></div>}
+        {view === "recipes" ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+              <Metric label="Recipes" value={stats.total} unit="" /><Metric label="Avg. margin" value={stats.avg.toFixed(1)} unit="%" /><Metric label="Alerts" value={stats.alerts} unit="" alert={stats.alerts > 0} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+              <div style={{ display: "flex", gap: 6 }}>{["All", ...CATEGORIES].map(c => <button key={c} onClick={() => setFilter(c)} style={{ padding: "6px 14px", borderRadius: 20, border: filter === c ? "none" : `1px solid ${C.border}`, background: filter === c ? C.green : "transparent", color: filter === c ? "#fff" : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{c}</button>)}</div>
+              <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", border: `1px solid ${C.border}`, borderRadius: 20, fontFamily: fontSans, fontSize: 12, background: C.card, outline: "none", width: 160 }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>{filtered.map(r => <RecipeCard key={r.id} recipe={r} ingredients={ingredients} onEdit={rec => setRecipeModal({ open: true, recipe: rec })} onDelete={id => setRecipes(prev => prev.filter(x => x.id !== id))} />)}</div>
+            {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}><Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ marginTop: 12 }}>+ Create a recipe</Btn></div>}
+          </>
+        ) : (
+          shiftView === "dashboard" ? (
+            <ShiftDashboard shifts={shifts} recipes={recipes} ingredients={ingredients} onEdit={handleEditShift} onDelete={handleDeleteShift} onNew={handleNewShift} />
+          ) : (
+            <ShiftForm shift={editingShift} recipes={recipes} ingredients={ingredients} onSave={handleSaveShift} onCancel={() => { setEditingShift(null); setShiftView("dashboard"); }} />
+          )
+        )}
       </div>
       <IngredientModal open={showIngModal} onClose={() => setShowIngModal(false)} ingredients={ingredients} onSave={setIngredients} />
       <RecipeModal open={recipeModal.open} onClose={() => setRecipeModal({ open: false, recipe: null })} recipe={recipeModal.recipe} ingredients={ingredients} onSave={rec => setRecipes(prev => { const idx = prev.findIndex(r => r.id === rec.id); if (idx >= 0) { const c = [...prev]; c[idx] = rec; return c; } return [...prev, rec]; })} />
