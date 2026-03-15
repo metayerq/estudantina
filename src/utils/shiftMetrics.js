@@ -1,4 +1,4 @@
-const calcRecipeCost = (recipe, ingredients) => {
+export const calcRecipeCost = (recipe, ingredients) => {
   let total = 0;
   for (const item of recipe.items) {
     const ing = ingredients.find(i => i.id === item.ingredientId);
@@ -7,7 +7,7 @@ const calcRecipeCost = (recipe, ingredients) => {
   return total;
 };
 
-const calcUnitCost = (recipe, ingredients) => {
+export const calcUnitCost = (recipe, ingredients) => {
   const t = calcRecipeCost(recipe, ingredients);
   return recipe.portions > 0 ? t / recipe.portions : 0;
 };

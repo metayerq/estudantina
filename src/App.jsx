@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import store from "./services/storage.js";
 import { computeShiftMetrics, getShiftAlertLevel, THRESHOLDS } from "./utils/shiftMetrics.js";
 import { createShift as addShift, updateShift as editShift, deleteShift as removeShift } from "./services/shiftService.js";
+import { computeMenuPerformance, getQuadrantStyle, getActionRecommendations, computeBreakEven } from "./utils/menuPerformanceService.js";
+import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from "recharts";
 // ─── Theme ──────────────────────────────────────────────────────
 const C = {
   bg: "#F5F0E8", card: "#FFFFFF", green: "#2D5A3D", greenLight: "#3A7550",
@@ -301,10 +303,13 @@ function ShiftDashboard({ shifts, recipes, ingredients, onEdit, onDelete, onNew 
     </>
   );
 }
-function ShiftForm({ shift, recipes, ingredients, onSave, onCancel }) {
+function ShiftForm({ shift, recipes, ingredients, onSave, onCancel, shiftTemplates = [], onSaveTemplate, onDeleteTemplate, onLogAsReal }) {
   const blank = { date: new Date().toISOString().slice(0, 10), period: "morning", staff_count: 1, hours_worked: 6, hourly_rate: 5.50, sales: [], notes: "" };
   const [f, setF] = useState(shift || blank);
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+  const [mode, setMode] = useState("real");
+  const [templateName, setTemplateName] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   useEffect(() => { setF(shift || blank); }, [shift]);
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -341,13 +346,21 @@ function ShiftForm({ shift, recipes, ingredients, onSave, onCancel }) {
     return grouped;
   }, [recipes]);
 
+  const breakEven = useMemo(() => mode === "simulate" ? computeBreakEven(f, recipes, ingredients) : null, [mode, f, recipes, ingredients]);
+
+  const loadTemplate = (id) => {
+    setSelectedTemplateId(id);
+    const t = shiftTemplates.find(x => x.id === id);
+    if (t) setF(prev => ({ ...prev, sales: t.sales, staff_count: t.staff_count, hours_worked: t.hours_worked, hourly_rate: t.hourly_rate, period: t.period }));
+  };
+
   const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontSans, fontSize: 14, background: C.cream, boxSizing: "border-box" };
   const labelStyle = { fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 };
 
   const previewPanel = (
     <div style={{ position: isMobile ? "static" : "sticky", top: 20 }}>
-      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${alertLevel === "red" ? `${C.red}30` : alertLevel === "amber" ? `${C.amber}30` : C.border}` }}>
-        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Live preview</div>
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${alertLevel === "red" ? `${C.red}30` : alertLevel === "amber" ? `${C.amber}30` : mode === "simulate" ? `${C.amber}60` : C.border}` }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{mode === "simulate" ? "Simulation preview" : "Live preview"}</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
           <Metric label="Revenue" value={metrics.revenue.toFixed(2)} size="small" />
           <Metric label="COGS" value={metrics.totalCOGS.toFixed(2)} size="small" />
@@ -366,10 +379,40 @@ function ShiftForm({ shift, recipes, ingredients, onSave, onCancel }) {
             {!metrics.is_profitable ? "This shift is unprofitable" : "Margin or efficiency below threshold"}
           </div>
         )}
+        {mode === "simulate" && breakEven && metrics.revenue > 0 && (
+          <div style={{ padding: 12, background: breakEven.isAlreadyProfitable ? C.greenPale : C.amberPale, borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ fontFamily: fontSans, fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Break-even</div>
+            {breakEven.isAlreadyProfitable ? (
+              <div style={{ fontFamily: fontSans, fontSize: 13, color: C.green }}>Already profitable at €{breakEven.currentNetProfit.toFixed(2)} net</div>
+            ) : (
+              <div style={{ fontFamily: fontSans, fontSize: 13, color: C.amber }}>
+                Sell <strong>{breakEven.additionalUnits}</strong> more <strong>{breakEven.recipe?.name}</strong> to break even
+              </div>
+            )}
+          </div>
+        )}
+        {mode === "simulate" && (
+          <div style={{ padding: 14, background: C.cream, borderRadius: 8, border: `1px dashed ${C.border}` }}>
+            <div style={{ fontFamily: fontSans, fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Scenarios</div>
+            <select value={selectedTemplateId || ""} onChange={e => e.target.value ? loadTemplate(e.target.value) : setSelectedTemplateId(null)} style={{ ...inputStyle, marginBottom: 8 }}>
+              <option value="">— Load a scenario —</option>
+              {shiftTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input placeholder="Scenario name" value={templateName} onChange={e => setTemplateName(e.target.value)} style={{ flex: 1, padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: fontSans, fontSize: 12, background: C.card }} />
+              <Btn onClick={() => { if (!templateName) return; onSaveTemplate({ id: uid(), name: templateName, sales: f.sales, staff_count: f.staff_count, hours_worked: f.hours_worked, hourly_rate: f.hourly_rate, period: f.period }); setTemplateName(""); }} disabled={!templateName} style={{ fontSize: 11, padding: "6px 12px" }}>Save</Btn>
+            </div>
+            {selectedTemplateId && <button onClick={() => { onDeleteTemplate(selectedTemplateId); setSelectedTemplateId(null); }} style={{ background: "none", border: "none", fontFamily: fontSans, fontSize: 11, color: C.red, cursor: "pointer", marginTop: 6, padding: 0 }}>Delete this scenario</button>}
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
-        <Btn onClick={() => onSave(f)} disabled={!f.date || f.sales.length === 0}>Save shift</Btn>
+        {mode === "simulate" ? (
+          <Btn onClick={() => onLogAsReal(f)} disabled={f.sales.length === 0}>Log as real shift</Btn>
+        ) : (
+          <Btn onClick={() => onSave(f)} disabled={!f.date || f.sales.length === 0}>Save shift</Btn>
+        )}
       </div>
     </div>
   );
@@ -377,7 +420,13 @@ function ShiftForm({ shift, recipes, ingredients, onSave, onCancel }) {
   return (
     <div>
       <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.green, marginBottom: 16, padding: 0 }}>← Back to shifts</button>
-      <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px", color: C.green }}>{shift ? "Edit shift" : "Log a shift"}</h2>
+      {!shift && (
+        <div style={{ display: "flex", gap: 2, background: C.border, borderRadius: 8, padding: 2, marginBottom: 16, width: "fit-content" }}>
+          <button onClick={() => setMode("real")} style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: mode === "real" ? C.card : "transparent", color: mode === "real" ? C.green : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Real</button>
+          <button onClick={() => setMode("simulate")} style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: mode === "simulate" ? C.card : "transparent", color: mode === "simulate" ? C.amber : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Simulate</button>
+        </div>
+      )}
+      <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px", color: mode === "simulate" ? C.amber : C.green }}>{shift ? "Edit shift" : mode === "simulate" ? "Shift Simulator" : "Log a shift"}</h2>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: 20, alignItems: "start" }}>
         <div>
           <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 16 }}>
@@ -430,8 +479,181 @@ function ShiftForm({ shift, recipes, ingredients, onSave, onCancel }) {
     </div>
   );
 }
+// ─── Menu Performance ────────────────────────────────────────────
+function CustomMatrixTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  const qs = getQuadrantStyle(d.quadrant);
+  return (
+    <div style={{ background: C.card, padding: 12, borderRadius: 8, boxShadow: C.shadowLg, border: `1px solid ${C.border}` }}>
+      <div style={{ fontFamily: font, fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{d.recipe.name}</div>
+      <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 6 }}>
+        {d.totalQty} units sold · €{d.totalRevenue.toFixed(0)} revenue<br />
+        Margin: {d.avgMargin.toFixed(1)}%
+      </div>
+      <Badge color={qs.color} bg={qs.bg}>{qs.label}</Badge>
+    </div>
+  );
+}
+
+function MenuPerformanceView({ recipes, ingredients, shifts, menuSort, setMenuSort, menuFilterCat, setMenuFilterCat, menuFilterQuadrant, setMenuFilterQuadrant, onNavigateToShifts }) {
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  const performanceData = useMemo(() => computeMenuPerformance(recipes, ingredients, shifts), [recipes, ingredients, shifts]);
+  const actions = useMemo(() => getActionRecommendations(performanceData), [performanceData]);
+
+  const medianQty = useMemo(() => {
+    if (performanceData.length === 0) return 0;
+    const sorted = [...performanceData].sort((a, b) => a.totalQty - b.totalQty);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1].totalQty + sorted[mid].totalQty) / 2 : sorted[mid].totalQty;
+  }, [performanceData]);
+
+  const toggleSort = (key) => {
+    setMenuSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" });
+  };
+
+  const sortedFiltered = useMemo(() => {
+    let data = [...performanceData];
+    if (menuFilterCat !== "All") data = data.filter(d => d.recipe.category === menuFilterCat);
+    if (menuFilterQuadrant !== "All") data = data.filter(d => d.quadrant === menuFilterQuadrant);
+    data.sort((a, b) => {
+      let va, vb;
+      if (menuSort.key === "name") { va = a.recipe.name.toLowerCase(); vb = b.recipe.name.toLowerCase(); }
+      else if (menuSort.key === "category") { va = a.recipe.category; vb = b.recipe.category; }
+      else { va = a[menuSort.key]; vb = b[menuSort.key]; }
+      if (va < vb) return menuSort.dir === "asc" ? -1 : 1;
+      if (va > vb) return menuSort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return data;
+  }, [performanceData, menuFilterCat, menuFilterQuadrant, menuSort]);
+
+  if (shifts.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: 60, color: C.textMuted }}>
+        <div style={{ fontFamily: font, fontSize: 22, marginBottom: 8 }}>No shifts logged yet</div>
+        <div style={{ fontFamily: fontSans, fontSize: 14, marginBottom: 16 }}>Log some shifts first to see your menu performance</div>
+        <Btn onClick={onNavigateToShifts}>Go to Shifts</Btn>
+      </div>
+    );
+  }
+
+  if (performanceData.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: 60, color: C.textMuted }}>
+        <div style={{ fontFamily: font, fontSize: 22, marginBottom: 8 }}>No sales data yet</div>
+        <div style={{ fontFamily: fontSans, fontSize: 14 }}>Your logged shifts have no sales — add sales to see the menu matrix</div>
+      </div>
+    );
+  }
+
+  const filterPill = (key, label, active, onClick) => (
+    <button key={key} onClick={onClick} style={{ padding: "5px 12px", borderRadius: 20, border: active ? "none" : `1px solid ${C.border}`, background: active ? C.green : "transparent", color: active ? "#fff" : C.textMuted, fontFamily: fontSans, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+  );
+
+  const colHeader = (key, label) => (
+    <th onClick={() => toggleSort(key)} style={{ padding: 6, cursor: "pointer", color: C.textMuted, fontSize: 10, textTransform: "uppercase", userSelect: "none", whiteSpace: "nowrap", fontFamily: fontSans }}>
+      {label} {menuSort.key === key ? (menuSort.dir === "asc" ? "▲" : "▼") : ""}
+    </th>
+  );
+
+  return (
+    <>
+      {/* Chart */}
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Performance Matrix</div>
+        <ResponsiveContainer width="100%" height={isMobile ? 260 : 360}>
+          <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 20 }}>
+            <XAxis type="number" dataKey="totalQty" name="Units Sold" tick={{ fontFamily: fontMono, fontSize: 11 }} label={{ value: "Units sold", position: "bottom", offset: 0, style: { fontFamily: fontSans, fontSize: 11, fill: C.textMuted } }} />
+            <YAxis type="number" dataKey="avgMargin" name="Margin %" domain={[0, 100]} tick={{ fontFamily: fontMono, fontSize: 11 }} label={{ value: "Gross margin %", angle: -90, position: "insideLeft", style: { fontFamily: fontSans, fontSize: 11, fill: C.textMuted } }} />
+            <ZAxis type="number" dataKey="totalRevenue" range={isMobile ? [40, 300] : [60, 600]} name="Revenue" />
+            <ReferenceLine y={THRESHOLDS.MIN_GROSS_MARGIN} stroke={C.border} strokeDasharray="4 4" label={{ value: `${THRESHOLDS.MIN_GROSS_MARGIN}%`, position: "right", style: { fontFamily: fontMono, fontSize: 10, fill: C.textMuted } }} />
+            <ReferenceLine x={medianQty} stroke={C.border} strokeDasharray="4 4" />
+            <Tooltip content={<CustomMatrixTooltip />} />
+            <Scatter data={performanceData}>
+              {performanceData.map((entry, i) => {
+                const qs = getQuadrantStyle(entry.quadrant);
+                return <Cell key={i} fill={qs.color} fillOpacity={0.7} />;
+              })}
+            </Scatter>
+          </ScatterChart>
+        </ResponsiveContainer>
+        <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 8, flexWrap: "wrap" }}>
+          {["star", "hidden_gem", "question", "dog"].map(q => {
+            const qs = getQuadrantStyle(q);
+            return <span key={q} style={{ fontFamily: fontSans, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: qs.color, display: "inline-block" }} />{qs.label}</span>;
+          })}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20, overflowX: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>Recipe breakdown</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {["All", ...CATEGORIES].map(c => filterPill(`cat-${c}`, c, menuFilterCat === c, () => setMenuFilterCat(c)))}
+            <span key="sep" style={{ width: 1, background: C.border, margin: "0 4px" }} />
+            {["All", "star", "hidden_gem", "question", "dog"].map(q => {
+              const qs = q === "All" ? { label: "All" } : getQuadrantStyle(q);
+              return filterPill(`q-${q}`, qs.label, menuFilterQuadrant === q, () => setMenuFilterQuadrant(q));
+            })}
+          </div>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fontSans, fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: "left" }}>
+              {colHeader("name", "Recipe")}
+              {colHeader("category", "Category")}
+              {colHeader("totalQty", "Units")}
+              {colHeader("totalRevenue", "Revenue")}
+              {colHeader("avgMargin", "Margin %")}
+              {colHeader("quadrant", "Quadrant")}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedFiltered.map(d => {
+              const qs = getQuadrantStyle(d.quadrant);
+              const cc = catColors[d.recipe.category] || { bg: C.greenPale, color: C.green };
+              return (
+                <tr key={d.recipe.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ padding: "5px 6px", fontWeight: 500 }}>{d.recipe.name}</td>
+                  <td style={{ padding: "5px 6px" }}><Badge color={cc.color} bg={cc.bg}>{d.recipe.category}</Badge></td>
+                  <td style={{ padding: "5px 6px", fontFamily: fontMono }}>{d.totalQty}</td>
+                  <td style={{ padding: "5px 6px", fontFamily: fontMono }}>€{d.totalRevenue.toFixed(0)}</td>
+                  <td style={{ padding: "5px 6px", fontFamily: fontMono, color: d.avgMargin >= THRESHOLDS.MIN_GROSS_MARGIN ? C.green : C.red }}>{d.avgMargin.toFixed(1)}%</td>
+                  <td style={{ padding: "5px 6px" }}><Badge color={qs.color} bg={qs.bg}>{qs.label}</Badge></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {sortedFiltered.length === 0 && <div style={{ textAlign: "center", padding: 20, color: C.textMuted, fontFamily: fontSans, fontSize: 13 }}>No recipes match the current filters</div>}
+      </div>
+
+      {/* Action Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+        {actions.map(a => {
+          const qs = getQuadrantStyle(a.quadrant);
+          return (
+            <div key={a.quadrant} style={{ background: C.card, borderRadius: 10, padding: 16, boxShadow: C.shadow, borderLeft: `4px solid ${qs.color}` }}>
+              <Badge color={qs.color} bg={qs.bg}>{qs.label}</Badge>
+              <div style={{ fontFamily: fontSans, fontSize: 13, marginTop: 8, lineHeight: 1.5, color: C.text }}>{a.message}</div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 // ─── App ────────────────────────────────────────────────────────
-const SK = "estudantina-costing-v4";
+const SK = "estudantina-costing-v5";
 export default function App() {
   const [ingredients, setIngredients] = useState(DEFAULT_INGREDIENTS);
   const [recipes, setRecipes] = useState(DEFAULT_RECIPES);
@@ -439,6 +661,10 @@ export default function App() {
   const [view, setView] = useState("recipes");
   const [shiftView, setShiftView] = useState("dashboard");
   const [editingShift, setEditingShift] = useState(null);
+  const [shiftTemplates, setShiftTemplates] = useState([]);
+  const [menuSort, setMenuSort] = useState({ key: "totalQty", dir: "desc" });
+  const [menuFilterCat, setMenuFilterCat] = useState("All");
+  const [menuFilterQuadrant, setMenuFilterQuadrant] = useState("All");
   const [filter, setFilter] = useState("All");
   const [showIngModal, setShowIngModal] = useState(false);
   const [recipeModal, setRecipeModal] = useState({ open: false, recipe: null });
@@ -450,12 +676,14 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await store.get(SK);
+        let raw = await store.get(SK);
+        if (!raw) raw = await store.get("estudantina-costing-v4");
         if (raw) {
           const d = JSON.parse(raw);
           if (d.ingredients?.length) setIngredients(d.ingredients);
           if (d.recipes?.length) setRecipes(d.recipes);
           if (d.shifts?.length) setShifts(d.shifts);
+          if (d.shift_templates?.length) setShiftTemplates(d.shift_templates);
         }
       } catch (e) { console.warn(e); }
       setLoaded(true);
@@ -464,11 +692,11 @@ export default function App() {
 
   const persist = useCallback(async () => {
     setSaveStatus("saving");
-    try { await store.set(SK, JSON.stringify({ ingredients, recipes, shifts })); setSaveStatus("saved"); } catch { setSaveStatus("error"); }
+    try { await store.set(SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates })); setSaveStatus("saved"); } catch { setSaveStatus("error"); }
     clearTimeout(stRef.current); stRef.current = setTimeout(() => setSaveStatus(null), 2000);
-  }, [ingredients, recipes, shifts]);
+  }, [ingredients, recipes, shifts, shiftTemplates]);
 
-  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, loaded, persist]);
+  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, loaded, persist]);
 
   const filtered = useMemo(() => { let r = recipes; if (filter !== "All") r = r.filter(x => x.category === filter); if (search) r = r.filter(x => x.name.toLowerCase().includes(search.toLowerCase())); return r; }, [recipes, filter, search]);
   const stats = useMemo(() => { let tm = 0, cp = 0, ac = 0; recipes.forEach(r => { const uc = calcUnitCost(r, ingredients); const m = getMargin(r.sellingPrice, uc); if (r.sellingPrice > 0) { tm += m; cp++; } if (m < r.targetMargin && r.sellingPrice > 0) ac++; }); return { avg: cp > 0 ? tm / cp : 0, alerts: ac, total: recipes.length }; }, [recipes, ingredients]);
@@ -485,6 +713,47 @@ export default function App() {
   const handleDeleteShift = (id) => setShifts(prev => removeShift(prev, id));
   const handleEditShift = (shift) => { setEditingShift(shift); setShiftView("form"); };
   const handleNewShift = () => { setEditingShift(null); setShiftView("form"); };
+  const handleSaveTemplate = (template) => setShiftTemplates(prev => [...prev, template]);
+  const handleDeleteTemplate = (id) => setShiftTemplates(prev => prev.filter(t => t.id !== id));
+  const handleLogAsReal = (shiftData) => {
+    setShifts(prev => addShift(prev, { ...shiftData, id: uid() }));
+    setShiftView("dashboard");
+  };
+
+  const generateRandomShifts = () => {
+    const periods = ["morning", "afternoon", "full_day"];
+    const today = new Date();
+    const newShifts = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dayOfWeek = d.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const period = periods[Math.floor(Math.random() * periods.length)];
+      const isFullDay = period === "full_day";
+      const staffCount = isFullDay ? (isWeekend ? 3 : 2) : (isWeekend ? 2 : 1);
+      const hoursWorked = isFullDay ? (7 + Math.random() * 3) : (3 + Math.random() * 3);
+      const busyFactor = isWeekend ? 1.4 : (0.7 + Math.random() * 0.6);
+      const sales = [];
+      for (const r of recipes) {
+        const baseQty = r.category === "Coffee" ? (8 + Math.random() * 20) : r.category === "Pastry" ? (2 + Math.random() * 10) : (1 + Math.random() * 5);
+        const qty = Math.round(baseQty * busyFactor * (isFullDay ? 1.6 : 0.8) * (0.3 + Math.random() * 1.0));
+        if (qty > 0 && Math.random() > 0.2) sales.push({ recipe_id: r.id, quantity: qty });
+      }
+      newShifts.push({
+        id: uid(),
+        date: d.toISOString().slice(0, 10),
+        period,
+        staff_count: staffCount,
+        hours_worked: Math.round(hoursWorked * 2) / 2,
+        hourly_rate: 5.50,
+        sales,
+        notes: isWeekend ? "Weekend" : "",
+      });
+    }
+    setShifts(newShifts);
+    setShiftView("dashboard");
+  };
 
   const tabStyle = (active) => ({
     padding: "6px 16px", borderRadius: 6, border: "none",
@@ -504,6 +773,7 @@ export default function App() {
               <div style={{ display: "flex", gap: 2, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 2 }}>
                 <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
                 <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
+                <button onClick={() => setView("menu")} style={tabStyle(view === "menu")}>Menu</button>
               </div>
               <SaveIndicator status={saveStatus} />
             </div>
@@ -514,9 +784,12 @@ export default function App() {
                   <Btn variant="secondary" onClick={() => setShowIngModal(true)} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 12 }}>📦 Ingredients ({ingredients.length})</Btn>
                   <Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ New recipe</Btn>
                 </>
-              ) : (
-                <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
-              )}
+              ) : view === "shifts" ? (
+                <>
+                  <Btn variant="secondary" onClick={generateRandomShifts} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
+                  <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -534,12 +807,14 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>{filtered.map(r => <RecipeCard key={r.id} recipe={r} ingredients={ingredients} onEdit={rec => setRecipeModal({ open: true, recipe: rec })} onDelete={id => setRecipes(prev => prev.filter(x => x.id !== id))} />)}</div>
             {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}><Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ marginTop: 12 }}>+ Create a recipe</Btn></div>}
           </>
-        ) : (
+        ) : view === "shifts" ? (
           shiftView === "dashboard" ? (
             <ShiftDashboard shifts={shifts} recipes={recipes} ingredients={ingredients} onEdit={handleEditShift} onDelete={handleDeleteShift} onNew={handleNewShift} />
           ) : (
-            <ShiftForm shift={editingShift} recipes={recipes} ingredients={ingredients} onSave={handleSaveShift} onCancel={() => { setEditingShift(null); setShiftView("dashboard"); }} />
+            <ShiftForm shift={editingShift} recipes={recipes} ingredients={ingredients} onSave={handleSaveShift} onCancel={() => { setEditingShift(null); setShiftView("dashboard"); }} shiftTemplates={shiftTemplates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={handleDeleteTemplate} onLogAsReal={handleLogAsReal} />
           )
+        ) : (
+          <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
         )}
       </div>
       <IngredientModal open={showIngModal} onClose={() => setShowIngModal(false)} ingredients={ingredients} onSave={setIngredients} />
