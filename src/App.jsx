@@ -5,7 +5,7 @@ import { createShift as addShift, updateShift as editShift, deleteShift as remov
 import { computeMenuPerformance, getQuadrantStyle, getActionRecommendations, computeBreakEven } from "./utils/menuPerformanceService.js";
 import { stampShiftSnapshots } from "./services/snapshotService.js";
 import { addPriceEntry, getCurrentPrice } from "./services/priceHistoryService.js";
-import { loadData, migrateToV6, CURRENT_SK, DEFAULT_SETTINGS } from "./services/migrationService.js";
+import { loadData, migrateToV6, ensureSuppliers, ensurePriceHistory, CURRENT_SK, DEFAULT_SETTINGS } from "./services/migrationService.js";
 import { generateAlerts, mergeAlerts, dismissAlert as dismissAlertFn, getActiveAlertCount } from "./services/alertService.js";
 import { getSupplierIngredients, getSupplierLastUpdate, SUPPLIER_CATEGORIES } from "./services/supplierService.js";
 import { computeCostDrift, computeDriftSummary, getIngredientTimeline, computeMarginErosion } from "./services/costDriftService.js";
@@ -996,13 +996,23 @@ export default function App() {
         const { data, needsMigration } = await loadData(store);
         if (data) {
           const d = needsMigration ? migrateToV6(data) : data;
-          if (d.ingredients?.length) setIngredients(d.ingredients);
+          const rawIngs = d.ingredients?.length ? d.ingredients : DEFAULT_INGREDIENTS;
+          const ings = ensurePriceHistory(rawIngs);
+          // Always ensure suppliers exist (handles fresh install, migration, or stale v6)
+          const { suppliers: resolvedSuppliers, ingredients: linkedIngs } = ensureSuppliers(ings, d.suppliers || []);
+          setIngredients(linkedIngs);
           if (d.recipes?.length) setRecipes(d.recipes);
           if (d.shifts?.length) setShifts(d.shifts);
           if (d.shift_templates?.length) setShiftTemplates(d.shift_templates);
-          if (d.suppliers?.length) setSuppliers(d.suppliers);
+          setSuppliers(resolvedSuppliers);
           if (d.settings) setSettings(d.settings);
           if (d.alerts?.length) setAlerts(d.alerts);
+        } else {
+          // Fresh install — no saved data, seed price history + extract suppliers from defaults
+          const seededIngs = ensurePriceHistory(DEFAULT_INGREDIENTS);
+          const { suppliers: defaultSuppliers, ingredients: linkedIngs } = ensureSuppliers(seededIngs, []);
+          setIngredients(linkedIngs);
+          setSuppliers(defaultSuppliers);
         }
       } catch (e) { console.warn(e); }
       setLoaded(true);

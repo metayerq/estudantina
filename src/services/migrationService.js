@@ -96,6 +96,82 @@ export function migrateToV6(data) {
   };
 }
 
+/**
+ * Ensure suppliers exist for ingredients that have supplier strings.
+ * Works on any data — fresh defaults, migrated, or existing v6.
+ * Returns { suppliers, ingredients } with supplier_ids linked.
+ */
+export function ensureSuppliers(ingredients, existingSuppliers = []) {
+  // Find ingredients that have a .supplier string but no matching Supplier entity
+  const existingNames = new Set(existingSuppliers.map(s => s.name));
+  const missingNames = new Set();
+  for (const ing of ingredients) {
+    if (ing.supplier && !existingNames.has(ing.supplier)) {
+      missingNames.add(ing.supplier);
+    }
+  }
+
+  if (missingNames.size === 0) {
+    // All suppliers already exist — just ensure ingredient_ids are populated
+    const suppliers = existingSuppliers.map(s => ({
+      ...s,
+      ingredient_ids: ingredients.filter(i => i.supplier_id === s.id || i.supplier === s.name).map(i => i.id),
+    }));
+    return { suppliers, ingredients };
+  }
+
+  // Create new supplier entities for missing names
+  const newSuppliers = [...existingSuppliers];
+  const supplierMap = {};
+  for (const s of existingSuppliers) supplierMap[s.name] = s.id;
+
+  for (const name of missingNames) {
+    const id = `s_${uid()}`;
+    const category = categorizeSupplier(name);
+    newSuppliers.push({ id, name, category, contact: "", notes: "", ingredient_ids: [] });
+    supplierMap[name] = id;
+  }
+
+  // Link ingredients to suppliers
+  const updatedIngredients = ingredients.map(ing => {
+    if (ing.supplier_id) return ing; // already linked
+    const supplierId = ing.supplier ? supplierMap[ing.supplier] : null;
+    return supplierId ? { ...ing, supplier_id: supplierId } : ing;
+  });
+
+  // Populate ingredient_ids
+  for (const supplier of newSuppliers) {
+    supplier.ingredient_ids = updatedIngredients
+      .filter(i => i.supplier_id === supplier.id)
+      .map(i => i.id);
+  }
+
+  return { suppliers: newSuppliers, ingredients: updatedIngredients };
+}
+
+/**
+ * Ensure every ingredient has a price_history array.
+ * Seeds from pricePerUnit when missing — works on fresh installs, migrations, or any data state.
+ */
+export function ensurePriceHistory(ingredients) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const nowISO = new Date().toISOString();
+  return ingredients.map(ing => {
+    if (ing.price_history && ing.price_history.length > 0) return ing;
+    return {
+      ...ing,
+      price_history: [{
+        id: uid(),
+        price_per_unit: ing.pricePerUnit,
+        effective_date: todayStr,
+        recorded_at: nowISO,
+        note: "Initial price",
+        invoice_ref: "",
+      }],
+    };
+  });
+}
+
 function categorizeSupplier(name) {
   const lower = name.toLowerCase();
   if (lower === "makro" || lower === "bwt") return "Wholesale";
