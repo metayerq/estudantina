@@ -9,9 +9,11 @@ import { loadData, migrateToV6, ensureSuppliers, ensurePriceHistory, CURRENT_SK,
 import { generateAlerts, mergeAlerts, dismissAlert as dismissAlertFn, getActiveAlertCount } from "./services/alertService.js";
 import { getSupplierIngredients, getSupplierLastUpdate, SUPPLIER_CATEGORIES } from "./services/supplierService.js";
 import { computeCostDrift, computeDriftSummary, getIngredientTimeline, computeMarginErosion } from "./services/costDriftService.js";
+import { filterShiftsByDays } from "./services/analyticsService.js";
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LineChart, Line } from "recharts";
 import { C, font, fontMono, fontSans, CATEGORIES, UNITS, PERIODS, uid, catColors, Badge, Metric, MarginBar, Modal, Btn, SaveIndicator } from "./components/shared.jsx";
-// Shared components imported from ./components/shared.jsx
+import Dashboard from "./components/Dashboard.jsx";
+import ShiftAnalytics from "./components/ShiftAnalytics.jsx";
 // ─── Default Data ───────────────────────────────────────────────
 const DEFAULT_INGREDIENTS = [
   { id: "1", name: "Olisipo Coffee Beans", unit: "kg", pricePerUnit: 22.0, supplier: "Olisipo", wasteFactor: 1.0 },
@@ -438,7 +440,7 @@ function CustomMatrixTooltip({ active, payload }) {
   );
 }
 
-function MenuPerformanceView({ recipes, ingredients, shifts, menuSort, setMenuSort, menuFilterCat, setMenuFilterCat, menuFilterQuadrant, setMenuFilterQuadrant, onNavigateToShifts }) {
+function MenuPerformanceView({ recipes, ingredients, shifts, menuSort, setMenuSort, menuFilterCat, setMenuFilterCat, menuFilterQuadrant, setMenuFilterQuadrant, menuDateRange, setMenuDateRange, onNavigateToShifts }) {
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -446,7 +448,13 @@ function MenuPerformanceView({ recipes, ingredients, shifts, menuSort, setMenuSo
     return () => window.removeEventListener("resize", handler);
   }, []);
 
-  const performanceData = useMemo(() => computeMenuPerformance(recipes, ingredients, shifts), [recipes, ingredients, shifts]);
+  const filteredShifts = useMemo(() => {
+    if (menuDateRange === "all") return shifts;
+    const days = { "7d": 7, "30d": 30, "90d": 90 }[menuDateRange] || 30;
+    return filterShiftsByDays(shifts, days);
+  }, [shifts, menuDateRange]);
+
+  const performanceData = useMemo(() => computeMenuPerformance(recipes, ingredients, filteredShifts), [recipes, ingredients, filteredShifts]);
   const actions = useMemo(() => getActionRecommendations(performanceData), [performanceData]);
 
   const medianQty = useMemo(() => {
@@ -509,7 +517,12 @@ function MenuPerformanceView({ recipes, ingredients, shifts, menuSort, setMenuSo
     <>
       {/* Chart */}
       <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
-        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Performance Matrix</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>Performance Matrix</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[{ value: "7d", label: "7 days" }, { value: "30d", label: "30 days" }, { value: "90d", label: "90 days" }, { value: "all", label: "All time" }].map(opt => filterPill(`dr-${opt.value}`, opt.label, menuDateRange === opt.value, () => setMenuDateRange(opt.value)))}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={isMobile ? 260 : 360}>
           <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 20 }}>
             <XAxis type="number" dataKey="totalQty" name="Units Sold" tick={{ fontFamily: fontMono, fontSize: 11 }} label={{ value: "Units sold", position: "bottom", offset: 0, style: { fontFamily: fontSans, fontSize: 11, fill: C.textMuted } }} />
@@ -934,8 +947,41 @@ function AlertBanner({ alerts, onDismiss, onNavigate }) {
 }
 
 // ─── Settings ────────────────────────────────────────────────────
-function SettingsPanel({ settings, onChange }) {
+function SettingsPanel({ settings, onChange, allData, onImportData }) {
   const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
+  const fileInputRef = useRef(null);
+  const [importConfirm, setImportConfirm] = useState(null);
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `estudantina-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (!Array.isArray(parsed.ingredients) || !Array.isArray(parsed.recipes)) {
+          alert("Invalid backup file: missing ingredients or recipes data.");
+          return;
+        }
+        setImportConfirm(parsed);
+      } catch {
+        alert("Invalid JSON file.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // Reset so the same file can be re-selected
+  };
+
   return (
     <div style={{ maxWidth: 500 }}>
       <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px" }}>Settings</h2>
@@ -959,6 +1005,42 @@ function SettingsPanel({ settings, onChange }) {
         </label>
         <Btn variant="secondary" onClick={() => onChange(DEFAULT_SETTINGS)} style={{ fontSize: 12 }}>Reset to defaults</Btn>
       </div>
+
+      {/* Data Management */}
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginTop: 20 }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted }}>Data Management</div>
+        <p style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14 }}>Export your data as a backup or import a previous backup file.</p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Btn onClick={handleExport} style={{ fontSize: 12 }}>Export data (JSON)</Btn>
+          <Btn variant="secondary" onClick={() => fileInputRef.current?.click()} style={{ fontSize: 12 }}>Import data</Btn>
+          <input ref={fileInputRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleFileSelect} />
+        </div>
+        {allData && (
+          <div style={{ marginTop: 12, fontFamily: fontMono, fontSize: 11, color: C.textMuted }}>
+            {allData.ingredients?.length || 0} ingredients · {allData.recipes?.length || 0} recipes · {allData.shifts?.length || 0} shifts · {allData.suppliers?.length || 0} suppliers
+          </div>
+        )}
+      </div>
+
+      {/* Import confirmation modal */}
+      {importConfirm && (
+        <Modal open={true} onClose={() => setImportConfirm(null)} title="Confirm import">
+          <div style={{ fontFamily: fontSans, fontSize: 13, marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>This will <strong>replace all</strong> your current data with:</p>
+            <div style={{ background: C.cream, borderRadius: 6, padding: 12, fontFamily: fontMono, fontSize: 12 }}>
+              <div>{importConfirm.ingredients?.length || 0} ingredients</div>
+              <div>{importConfirm.recipes?.length || 0} recipes</div>
+              <div>{importConfirm.shifts?.length || 0} shifts</div>
+              <div>{importConfirm.suppliers?.length || 0} suppliers</div>
+            </div>
+            <p style={{ marginTop: 12, color: C.red, fontSize: 12 }}>This cannot be undone.</p>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Btn variant="secondary" onClick={() => setImportConfirm(null)} style={{ fontSize: 12 }}>Cancel</Btn>
+            <Btn onClick={() => { onImportData(importConfirm); setImportConfirm(null); }} style={{ background: C.red, fontSize: 12 }}>Replace all data</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -968,13 +1050,14 @@ export default function App() {
   const [ingredients, setIngredients] = useState(DEFAULT_INGREDIENTS);
   const [recipes, setRecipes] = useState(DEFAULT_RECIPES);
   const [shifts, setShifts] = useState([]);
-  const [view, setView] = useState("recipes");
+  const [view, setView] = useState("dashboard");
   const [shiftView, setShiftView] = useState("dashboard");
   const [editingShift, setEditingShift] = useState(null);
   const [shiftTemplates, setShiftTemplates] = useState([]);
   const [menuSort, setMenuSort] = useState({ key: "totalQty", dir: "desc" });
   const [menuFilterCat, setMenuFilterCat] = useState("All");
   const [menuFilterQuadrant, setMenuFilterQuadrant] = useState("All");
+  const [menuDateRange, setMenuDateRange] = useState("all");
   const [filter, setFilter] = useState("All");
   const [showIngModal, setShowIngModal] = useState(false);
   const [recipeModal, setRecipeModal] = useState({ open: false, recipe: null });
@@ -1070,6 +1153,17 @@ export default function App() {
   const handleDismissAlert = (alertId) => {
     setAlerts(prev => dismissAlertFn(prev, alertId));
   };
+  const handleImportData = (data) => {
+    const ings = ensurePriceHistory(data.ingredients || DEFAULT_INGREDIENTS);
+    const { suppliers: resolvedSuppliers, ingredients: linkedIngs } = ensureSuppliers(ings, data.suppliers || []);
+    setIngredients(linkedIngs);
+    setRecipes(data.recipes || DEFAULT_RECIPES);
+    setShifts(data.shifts || []);
+    setShiftTemplates(data.shift_templates || []);
+    setSuppliers(resolvedSuppliers);
+    setSettings(data.settings || DEFAULT_SETTINGS);
+    setAlerts(data.alerts || []);
+  };
 
   const generateRandomShifts = () => {
     const periods = ["morning", "afternoon", "full_day"];
@@ -1123,6 +1217,7 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <h1 style={{ fontFamily: font, fontSize: 28, fontWeight: 400, margin: 0, fontStyle: "italic" }}>Estudantina</h1>
               <div style={{ display: "flex", gap: 2, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 2, overflowX: "auto" }}>
+                <button onClick={() => setView("dashboard")} style={tabStyle(view === "dashboard")}>Dashboard</button>
                 <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
                 <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
                 <button onClick={() => setView("menu")} style={tabStyle(view === "menu")}>Menu</button>
@@ -1134,7 +1229,12 @@ export default function App() {
               <SaveIndicator status={saveStatus} />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {view === "recipes" ? (
+              {view === "dashboard" ? (
+                <>
+                  <Btn variant="secondary" onClick={generateRandomShifts} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
+                  <Btn onClick={() => { setView("shifts"); handleNewShift(); }} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
+                </>
+              ) : view === "recipes" ? (
                 <>
                   <Btn variant="secondary" onClick={() => { setIngredients(DEFAULT_INGREDIENTS); setRecipes(DEFAULT_RECIPES); }} style={{ color: "rgba(255,255,255,0.5)", borderColor: "rgba(255,255,255,0.15)", fontSize: 11 }}>↺ Reset</Btn>
                   <Btn variant="secondary" onClick={() => setShowIngModal(true)} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 12 }}>📦 Ingredients ({ingredients.length})</Btn>
@@ -1142,6 +1242,8 @@ export default function App() {
                 </>
               ) : view === "shifts" ? (
                 <>
+                  {shiftView === "dashboard" && <Btn variant="secondary" onClick={() => setShiftView("analytics")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>📊 Analytics</Btn>}
+                  {shiftView === "analytics" && <Btn variant="secondary" onClick={() => setShiftView("dashboard")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Shifts</Btn>}
                   <Btn variant="secondary" onClick={generateRandomShifts} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
                   <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
                 </>
@@ -1157,7 +1259,9 @@ export default function App() {
         </div>
       </div>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 16px 40px" }}>
-        {view === "recipes" ? (
+        {view === "dashboard" ? (
+          <Dashboard shifts={shifts} recipes={recipes} ingredients={ingredients} alerts={alerts} onLogShift={() => { setView("shifts"); handleNewShift(); }} onSimulate={generateRandomShifts} onNavigate={setView} />
+        ) : view === "recipes" ? (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
               <Metric label="Recipes" value={stats.total} unit="" /><Metric label="Avg. margin" value={stats.avg.toFixed(1)} unit="%" /><Metric label="Alerts" value={stats.alerts} unit="" alert={stats.alerts > 0} />
@@ -1170,7 +1274,9 @@ export default function App() {
             {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}><Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ marginTop: 12 }}>+ Create a recipe</Btn></div>}
           </>
         ) : view === "shifts" ? (
-          shiftView === "dashboard" ? (
+          shiftView === "analytics" ? (
+            <ShiftAnalytics shifts={shifts} recipes={recipes} ingredients={ingredients} onBack={() => setShiftView("dashboard")} />
+          ) : shiftView === "dashboard" ? (
             <ShiftDashboard shifts={shifts} recipes={recipes} ingredients={ingredients} onEdit={handleEditShift} onDelete={handleDeleteShift} onNew={handleNewShift} />
           ) : (
             <ShiftForm shift={editingShift} recipes={recipes} ingredients={ingredients} onSave={handleSaveShift} onCancel={() => { setEditingShift(null); setShiftView("dashboard"); }} shiftTemplates={shiftTemplates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={handleDeleteTemplate} onLogAsReal={handleLogAsReal} />
@@ -1184,9 +1290,9 @@ export default function App() {
             <SupplierList suppliers={suppliers} ingredients={ingredients} onSelectSupplier={(id) => { setSelectedSupplierId(id); setSupplierView("detail"); }} />
           )
         ) : view === "settings" ? (
-          <SettingsPanel settings={settings} onChange={setSettings} />
+          <SettingsPanel settings={settings} onChange={setSettings} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts }} onImportData={handleImportData} />
         ) : (
-          <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
+          <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} menuDateRange={menuDateRange} setMenuDateRange={setMenuDateRange} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
         )}
         {/* Alert Banner */}
         {alerts.filter(a => !a.dismissed).length > 0 && view !== "settings" && (
