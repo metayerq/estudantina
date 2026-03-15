@@ -12,6 +12,8 @@ export const calcUnitCost = (recipe, ingredients) => {
   return recipe.portions > 0 ? t / recipe.portions : 0;
 };
 
+export const getMargin = (sp, uc) => sp > 0 ? ((sp - uc) / sp) * 100 : 0;
+
 export const THRESHOLDS = {
   MIN_GROSS_MARGIN: 72,
   MIN_REV_PER_LABOR_HOUR: 35,
@@ -20,13 +22,23 @@ export const THRESHOLDS = {
 export function computeShiftMetrics(shift, recipes, ingredients) {
   let revenue = 0;
   let totalCOGS = 0;
+  let hasEstimatedCosts = false;
 
   for (const sale of shift.sales) {
     const recipe = recipes.find(r => r.id === sale.recipe_id);
     if (!recipe) continue;
-    const unitCost = calcUnitCost(recipe, ingredients);
-    revenue += recipe.sellingPrice * sale.quantity;
-    totalCOGS += unitCost * sale.quantity;
+
+    if (sale.snapshot) {
+      // Use frozen snapshot values — historical accuracy
+      revenue += sale.snapshot.selling_price * sale.quantity;
+      totalCOGS += sale.snapshot.cost_per_unit * sale.quantity;
+    } else {
+      // Fallback: legacy shift without snapshot
+      const unitCost = calcUnitCost(recipe, ingredients);
+      revenue += recipe.sellingPrice * sale.quantity;
+      totalCOGS += unitCost * sale.quantity;
+      hasEstimatedCosts = true;
+    }
   }
 
   const gross_profit = revenue - totalCOGS;
@@ -37,7 +49,7 @@ export function computeShiftMetrics(shift, recipes, ingredients) {
   const revenue_per_labor_hour = total_labor_hours > 0 ? revenue / total_labor_hours : 0;
   const is_profitable = net_profit > 0;
 
-  return { revenue, totalCOGS, gross_profit, gross_margin_pct, labor_cost, net_profit, revenue_per_labor_hour, total_labor_hours, is_profitable };
+  return { revenue, totalCOGS, gross_profit, gross_margin_pct, labor_cost, net_profit, revenue_per_labor_hour, total_labor_hours, is_profitable, hasEstimatedCosts };
 }
 
 export function getShiftAlertLevel(metrics) {

@@ -1,80 +1,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import store from "./services/storage.js";
-import { computeShiftMetrics, getShiftAlertLevel, THRESHOLDS } from "./utils/shiftMetrics.js";
+import { computeShiftMetrics, getShiftAlertLevel, calcUnitCost, calcRecipeCost, getMargin, THRESHOLDS } from "./utils/shiftMetrics.js";
 import { createShift as addShift, updateShift as editShift, deleteShift as removeShift } from "./services/shiftService.js";
 import { computeMenuPerformance, getQuadrantStyle, getActionRecommendations, computeBreakEven } from "./utils/menuPerformanceService.js";
-import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from "recharts";
-// ─── Theme ──────────────────────────────────────────────────────
-const C = {
-  bg: "#F5F0E8", card: "#FFFFFF", green: "#2D5A3D", greenLight: "#3A7550",
-  greenPale: "#E8F0EA", cream: "#FAF7F0", text: "#1A1A1A", textMuted: "#6B6B6B",
-  red: "#C44D4D", redPale: "#FDF0F0", amber: "#B8860B", amberPale: "#FFF8E7",
-  border: "#E0DDD5",
-  shadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-  shadowLg: "0 4px 12px rgba(0,0,0,0.08)",
-};
-const font = "'Instrument Serif', Georgia, serif";
-const fontMono = "'DM Mono', 'SF Mono', monospace";
-const fontSans = "'DM Sans', 'Helvetica Neue', sans-serif";
-const CATEGORIES = ["Coffee", "Pastry", "Kombucha"];
-const UNITS = ["kg", "L", "unit", "g", "mL", "cl"];
-const PERIODS = [{ value: "morning", label: "Morning" }, { value: "afternoon", label: "Afternoon" }, { value: "full_day", label: "Full Day" }];
-const uid = () => Math.random().toString(36).slice(2, 10);
-const catColors = { "Coffee": { bg: "#F0E8D8", color: "#7A5C2E" }, "Pastry": { bg: "#F5E8EE", color: "#8A3A5C" }, "Kombucha": { bg: "#E4F0E8", color: "#2D5A3D" } };
-const calcRecipeCost = (recipe, ingredients) => {
-  let total = 0;
-  for (const item of recipe.items) { const ing = ingredients.find(i => i.id === item.ingredientId); if (ing) total += ing.pricePerUnit * item.qty * (ing.wasteFactor || 1); }
-  return total;
-};
-const calcUnitCost = (recipe, ingredients) => { const t = calcRecipeCost(recipe, ingredients); return recipe.portions > 0 ? t / recipe.portions : 0; };
-const getMargin = (sp, uc) => sp > 0 ? ((sp - uc) / sp) * 100 : 0;
-// ─── Shared Components ──────────────────────────────────────────
-function Badge({ children, color = C.green, bg = C.greenPale }) {
-  return <span style={{ display: "inline-block", fontSize: 11, fontFamily: fontSans, fontWeight: 600, padding: "2px 8px", borderRadius: 4, color, background: bg, letterSpacing: 0.3, textTransform: "uppercase" }}>{children}</span>;
-}
-function Metric({ label, value, unit = "€", size = "normal", alert = false }) {
-  const sm = size === "small";
-  return (<div style={{ textAlign: "center" }}>
-    <div style={{ fontFamily: fontSans, fontSize: sm ? 10 : 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
-    <div style={{ fontFamily: fontMono, fontSize: sm ? 18 : 26, fontWeight: 700, color: alert ? C.red : C.green, lineHeight: 1.1 }}>{value}<span style={{ fontSize: sm ? 12 : 16, fontWeight: 400, color: C.textMuted }}>{unit}</span></div>
-  </div>);
-}
-function MarginBar({ margin, target }) {
-  const barColor = margin >= target ? C.green : margin >= target - 5 ? C.amber : C.red;
-  return (<div style={{ width: "100%" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-      <span style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted }}>Actual margin</span>
-      <span style={{ fontFamily: fontMono, fontSize: 12, fontWeight: 600, color: barColor }}>{margin.toFixed(1)}%</span>
-    </div>
-    <div style={{ width: "100%", height: 6, background: C.border, borderRadius: 3, position: "relative" }}>
-      <div style={{ width: `${Math.min(margin, 100)}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.4s ease" }} />
-      <div style={{ position: "absolute", left: `${target}%`, top: -2, width: 2, height: 10, background: C.text, borderRadius: 1, opacity: 0.4 }} />
-    </div>
-    <div style={{ fontFamily: fontSans, fontSize: 10, color: C.textMuted, marginTop: 2 }}>Target: {target}%</div>
-  </div>);
-}
-function Modal({ open, onClose, title, children, wide }) {
-  if (!open) return null;
-  return (<div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)", padding: 16 }} onClick={onClose}>
-    <div style={{ background: C.card, borderRadius: 12, padding: 28, maxWidth: wide ? 720 : 560, width: "100%", maxHeight: "88vh", overflow: "auto", boxShadow: C.shadowLg }} onClick={e => e.stopPropagation()}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h3 style={{ fontFamily: font, fontSize: 22, margin: 0, color: C.green }}>{title}</h3>
-        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.textMuted }}>×</button>
-      </div>
-      {children}
-    </div>
-  </div>);
-}
-function Btn({ children, onClick, variant = "primary", style: sx, disabled }) {
-  const p = variant === "primary";
-  return <button disabled={disabled} onClick={onClick} style={{ padding: "8px 18px", borderRadius: 6, border: p ? "none" : `1px solid ${C.border}`, background: p ? C.green : "transparent", color: p ? "#fff" : C.text, fontFamily: fontSans, fontSize: 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, ...sx }}>{children}</button>;
-}
-function SaveIndicator({ status }) {
-  if (!status) return null;
-  const m = { saving: { t: "…", c: C.amber }, saved: { t: "✓ Saved", c: "#8FD5A6" }, error: { t: "Error", c: C.red } };
-  const s = m[status] || m.saved;
-  return <span style={{ fontFamily: fontSans, fontSize: 11, color: s.c }}>{s.t}</span>;
-}
+import { stampShiftSnapshots } from "./services/snapshotService.js";
+import { addPriceEntry, getCurrentPrice } from "./services/priceHistoryService.js";
+import { loadData, migrateToV6, CURRENT_SK, DEFAULT_SETTINGS } from "./services/migrationService.js";
+import { generateAlerts, mergeAlerts, dismissAlert as dismissAlertFn, getActiveAlertCount } from "./services/alertService.js";
+import { getSupplierIngredients, getSupplierLastUpdate, SUPPLIER_CATEGORIES } from "./services/supplierService.js";
+import { computeCostDrift, computeDriftSummary, getIngredientTimeline, computeMarginErosion } from "./services/costDriftService.js";
+import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LineChart, Line } from "recharts";
+import { C, font, fontMono, fontSans, CATEGORIES, UNITS, PERIODS, uid, catColors, Badge, Metric, MarginBar, Modal, Btn, SaveIndicator } from "./components/shared.jsx";
+// Shared components imported from ./components/shared.jsx
 // ─── Default Data ───────────────────────────────────────────────
 const DEFAULT_INGREDIENTS = [
   { id: "1", name: "Olisipo Coffee Beans", unit: "kg", pricePerUnit: 22.0, supplier: "Olisipo", wasteFactor: 1.0 },
@@ -153,7 +90,7 @@ function RecipeCard({ recipe, ingredients, onEdit, onDelete }) {
     </div>
   );
 }
-function IngredientModal({ open, onClose, ingredients, onSave }) {
+function IngredientModal({ open, onClose, ingredients, onSave, onOpenPriceUpdate }) {
   const [list, setList] = useState(ingredients);
   const [n, setN] = useState({ name: "", unit: "kg", pricePerUnit: "", supplier: "", wasteFactor: "1.0" });
   useEffect(() => { setList(ingredients); }, [ingredients]);
@@ -163,7 +100,7 @@ function IngredientModal({ open, onClose, ingredients, onSave }) {
       <div style={{ maxHeight: 350, overflow: "auto", marginBottom: 16 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fontSans, fontSize: 13 }}>
           <thead><tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: "left" }}><th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Ingredient</th><th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Price/u</th><th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Waste</th><th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Real cost</th><th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Supplier</th><th style={{ width: 28 }}></th></tr></thead>
-          <tbody>{list.map(ing => { const rc = ing.pricePerUnit * (ing.wasteFactor || 1); const hw = (ing.wasteFactor || 1) > 1; return (<tr key={ing.id} style={{ borderBottom: `1px solid ${C.border}` }}><td style={{ padding: "5px 6px" }}>{ing.name} <span style={{ color: C.textMuted, fontSize: 11 }}>/{ing.unit}</span></td><td style={{ padding: "5px 6px" }}><input type="number" step="0.01" value={ing.pricePerUnit} onChange={e => setList(list.map(i => i.id === ing.id ? { ...i, pricePerUnit: parseFloat(e.target.value) || 0 } : i))} style={{ width: 64, padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: fontMono, fontSize: 12, background: C.cream }} />€</td><td style={{ padding: "5px 6px" }}><input type="number" step="0.01" min="1" value={ing.wasteFactor ?? 1} onChange={e => setList(list.map(i => i.id === ing.id ? { ...i, wasteFactor: parseFloat(e.target.value) || 1 } : i))} style={{ width: 52, padding: "3px 5px", border: `1px solid ${hw ? C.amber : C.border}`, borderRadius: 4, fontFamily: fontMono, fontSize: 12, background: hw ? C.amberPale : C.cream }} /></td><td style={{ padding: "5px 6px", fontFamily: fontMono, fontSize: 12, color: hw ? C.amber : C.textMuted }}>{rc.toFixed(3)}€</td><td style={{ padding: "5px 6px", color: C.textMuted, fontSize: 12 }}>{ing.supplier}</td><td><button onClick={() => setList(list.filter(i => i.id !== ing.id))} style={{ background: "none", border: "none", cursor: "pointer", color: C.red, fontSize: 14 }}>×</button></td></tr>); })}</tbody>
+          <tbody>{list.map(ing => { const rc = ing.pricePerUnit * (ing.wasteFactor || 1); const hw = (ing.wasteFactor || 1) > 1; return (<tr key={ing.id} style={{ borderBottom: `1px solid ${C.border}` }}><td style={{ padding: "5px 6px" }}>{ing.name} <span style={{ color: C.textMuted, fontSize: 11 }}>/{ing.unit}</span></td><td style={{ padding: "5px 6px" }}><input type="number" step="0.01" value={ing.pricePerUnit} onChange={e => setList(list.map(i => i.id === ing.id ? { ...i, pricePerUnit: parseFloat(e.target.value) || 0 } : i))} style={{ width: 64, padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: fontMono, fontSize: 12, background: C.cream }} />€</td><td style={{ padding: "5px 6px" }}><input type="number" step="0.01" min="1" value={ing.wasteFactor ?? 1} onChange={e => setList(list.map(i => i.id === ing.id ? { ...i, wasteFactor: parseFloat(e.target.value) || 1 } : i))} style={{ width: 52, padding: "3px 5px", border: `1px solid ${hw ? C.amber : C.border}`, borderRadius: 4, fontFamily: fontMono, fontSize: 12, background: hw ? C.amberPale : C.cream }} /></td><td style={{ padding: "5px 6px", fontFamily: fontMono, fontSize: 12, color: hw ? C.amber : C.textMuted }}>{rc.toFixed(3)}€</td><td style={{ padding: "5px 6px", color: C.textMuted, fontSize: 12 }}>{ing.supplier}</td><td style={{ display: "flex", gap: 2 }}>{onOpenPriceUpdate && <button onClick={() => onOpenPriceUpdate(ing)} title="Update price" style={{ background: "none", border: "none", cursor: "pointer", color: C.green, fontSize: 12 }}>✎</button>}<button onClick={() => setList(list.filter(i => i.id !== ing.id))} style={{ background: "none", border: "none", cursor: "pointer", color: C.red, fontSize: 14 }}>×</button></td></tr>); })}</tbody>
         </table>
       </div>
       <div style={{ padding: 14, background: C.cream, borderRadius: 8, marginBottom: 16, border: `1px dashed ${C.border}` }}>
@@ -256,6 +193,11 @@ function ShiftCard({ shift, recipes, ingredients, onEdit, onDelete }) {
       {topItem && (
         <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>
           Top item: {topItem.name} ×{topItem.qty}
+        </div>
+      )}
+      {metrics.hasEstimatedCosts && (
+        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
+          <Badge color={C.amber} bg={C.amberPale}>⚠ Estimated costs</Badge>
         </div>
       )}
       {alertLevel !== "green" && (
@@ -652,8 +594,376 @@ function MenuPerformanceView({ recipes, ingredients, shifts, menuSort, setMenuSo
   );
 }
 
+// ─── Price Update Modal ──────────────────────────────────────────
+function PriceUpdateModal({ ingredient, recipes, ingredients, onSave, onClose }) {
+  const [newPrice, setNewPrice] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceRef, setInvoiceRef] = useState("");
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (ingredient) {
+      setNewPrice("");
+      setEffectiveDate(new Date().toISOString().slice(0, 10));
+      setInvoiceRef("");
+      setNote("");
+    }
+  }, [ingredient]);
+  if (!ingredient) return null;
+
+  const currentPrice = getCurrentPrice(ingredient);
+  const lastEntry = ingredient.price_history && ingredient.price_history.length > 0
+    ? [...ingredient.price_history].sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0]
+    : null;
+
+  const parsedPrice = parseFloat(newPrice);
+  const validPrice = !isNaN(parsedPrice) && parsedPrice > 0;
+
+  const impactedRecipes = validPrice ? recipes.filter(r => r.items.some(item => item.ingredientId === ingredient.id)).map(r => {
+    const currentCost = calcUnitCost(r, ingredients);
+    const currentMargin = getMargin(r.sellingPrice, currentCost);
+    const simIngredients = ingredients.map(i => i.id === ingredient.id ? { ...i, pricePerUnit: parsedPrice } : i);
+    const newCost = calcUnitCost(r, simIngredients);
+    const newMargin = getMargin(r.sellingPrice, newCost);
+    return { recipe: r, currentMargin, newMargin, delta: newMargin - currentMargin };
+  }) : [];
+
+  const handleSave = () => {
+    if (!validPrice) return;
+    const updated = addPriceEntry(ingredient, { price_per_unit: parsedPrice, effective_date: effectiveDate, note, invoice_ref: invoiceRef });
+    onSave(updated);
+  };
+
+  const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontSans, fontSize: 14, background: C.cream, boxSizing: "border-box" };
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Update price — ${ingredient.name}`}>
+      <div style={{ fontFamily: fontSans, fontSize: 13, marginBottom: 16, color: C.textMuted }}>
+        Current price: <strong style={{ color: C.text }}>€{currentPrice.toFixed(2)} / {ingredient.unit}</strong>
+        {lastEntry && <span> (set on {lastEntry.effective_date})</span>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+        <label style={{ display: "block" }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>New price per {ingredient.unit} (€)</span>
+          <input type="number" step="0.01" value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder={currentPrice.toFixed(2)} style={{ ...inputStyle, fontFamily: fontMono }} />
+        </label>
+        <label style={{ display: "block" }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Effective date</span>
+          <input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} style={inputStyle} />
+        </label>
+        <label style={{ display: "block" }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Invoice ref (optional)</span>
+          <input value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)} placeholder="INV-041" style={inputStyle} />
+        </label>
+        <label style={{ display: "block" }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Note (optional)</span>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="" style={inputStyle} />
+        </label>
+      </div>
+      {validPrice && impactedRecipes.length > 0 && (
+        <div style={{ padding: 14, background: C.cream, borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 16 }}>
+          <div style={{ fontFamily: fontSans, fontSize: 12, fontWeight: 600, textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Impact preview — {impactedRecipes.length} recipe{impactedRecipes.length > 1 ? "s" : ""} affected</div>
+          {impactedRecipes.map(({ recipe, currentMargin, newMargin, delta }) => {
+            const belowTarget = newMargin < recipe.targetMargin;
+            return (
+              <div key={recipe.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontFamily: fontSans, fontSize: 13 }}>{recipe.name}</span>
+                <span style={{ fontFamily: fontMono, fontSize: 12 }}>
+                  <span style={{ color: C.textMuted }}>{currentMargin.toFixed(1)}%</span>
+                  <span style={{ color: C.textMuted }}> → </span>
+                  <span style={{ color: belowTarget ? C.red : delta < -2 ? C.amber : C.green, fontWeight: 600 }}>{newMargin.toFixed(1)}%</span>
+                  {belowTarget && <span style={{ marginLeft: 4, color: C.amber }}>⚠</span>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!validPrice}>Save price</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Supplier Components ─────────────────────────────────────────
+function SupplierList({ suppliers, ingredients, onSelectSupplier }) {
+  if (suppliers.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: 60, color: C.textMuted }}>
+        <div style={{ fontFamily: font, fontSize: 22, marginBottom: 8 }}>No suppliers yet</div>
+        <div style={{ fontFamily: fontSans, fontSize: 14 }}>Suppliers will be created automatically from your ingredient data</div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+      {suppliers.map(supplier => {
+        const supplierIngs = getSupplierIngredients(supplier, ingredients);
+        const lastUpdate = getSupplierLastUpdate(supplier, ingredients);
+        const catStyle = { "Wholesale": { bg: "#E8EEF5", color: "#2E5A8A" }, "Market": { bg: "#F5EDE8", color: "#8A5A2E" }, "Specialty": { bg: "#E8F0EA", color: "#2D5A3D" }, "House": { bg: "#F0ECF5", color: "#5A2E8A" } };
+        const cs = catStyle[supplier.category] || { bg: C.greenPale, color: C.green };
+        return (
+          <div key={supplier.id} onClick={() => onSelectSupplier(supplier.id)} style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, cursor: "pointer", transition: "box-shadow 0.2s" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <h4 style={{ fontFamily: font, fontSize: 19, margin: 0 }}>{supplier.name}</h4>
+              <Badge color={cs.color} bg={cs.bg}>{supplier.category}</Badge>
+            </div>
+            <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12 }}>
+              {supplierIngs.length} ingredient{supplierIngs.length !== 1 ? "s" : ""}
+              {lastUpdate && <span> · Last update: {lastUpdate}</span>}
+            </div>
+            {supplierIngs.slice(0, 3).map(ing => (
+              <div key={ing.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}`, fontFamily: fontSans, fontSize: 12 }}>
+                <span>{ing.name}</span>
+                <span style={{ fontFamily: fontMono, color: C.textMuted }}>€{ing.pricePerUnit.toFixed(2)}/{ing.unit}</span>
+              </div>
+            ))}
+            {supplierIngs.length > 3 && <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginTop: 6 }}>+{supplierIngs.length - 3} more</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SupplierDetail({ supplier, ingredients, recipes, onOpenPriceUpdate, onBack }) {
+  if (!supplier) return null;
+  const supplierIngs = getSupplierIngredients(supplier, ingredients);
+  return (
+    <div>
+      <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.green, marginBottom: 16, padding: 0 }}>← Back to suppliers</button>
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontFamily: font, fontSize: 24, margin: 0 }}>{supplier.name}</h2>
+          <Badge>{supplier.category}</Badge>
+        </div>
+        {supplier.contact && <div style={{ fontFamily: fontSans, fontSize: 13, color: C.textMuted, marginBottom: 4 }}>Contact: {supplier.contact}</div>}
+        {supplier.notes && <div style={{ fontFamily: fontSans, fontSize: 13, color: C.textMuted }}>{supplier.notes}</div>}
+      </div>
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}` }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Ingredients ({supplierIngs.length})</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fontSans, fontSize: 13 }}>
+          <thead><tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: "left" }}>
+            <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Ingredient</th>
+            <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Current Price</th>
+            <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Last Updated</th>
+            <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>History</th>
+            <th style={{ width: 80 }}></th>
+          </tr></thead>
+          <tbody>{supplierIngs.map(ing => {
+            const h = ing.price_history || [];
+            const lastEntry = h.length > 0 ? [...h].sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0] : null;
+            return (
+              <tr key={ing.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                <td style={{ padding: "8px 6px" }}>{ing.name} <span style={{ color: C.textMuted, fontSize: 11 }}>/{ing.unit}</span></td>
+                <td style={{ padding: "8px 6px", fontFamily: fontMono }}>€{ing.pricePerUnit.toFixed(2)}</td>
+                <td style={{ padding: "8px 6px", color: C.textMuted, fontSize: 12 }}>{lastEntry ? lastEntry.effective_date : "—"}</td>
+                <td style={{ padding: "8px 6px", fontFamily: fontMono, fontSize: 11, color: C.textMuted }}>{h.length} entries</td>
+                <td style={{ padding: "8px 6px" }}><Btn variant="secondary" onClick={() => onOpenPriceUpdate(ing)} style={{ fontSize: 11, padding: "4px 10px" }}>Update</Btn></td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Cost Drift Dashboard ────────────────────────────────────────
+function CostDriftDashboard({ ingredients, recipes, suppliers, onOpenPriceUpdate }) {
+  const [selectedIngId, setSelectedIngId] = useState(null);
+  const [driftSort, setDriftSort] = useState({ key: "changePct", dir: "desc" });
+  const summary = useMemo(() => computeDriftSummary(ingredients, recipes), [ingredients, recipes]);
+  const drifts = useMemo(() => computeCostDrift(ingredients, recipes), [ingredients, recipes]);
+  const erosions = useMemo(() => recipes.map(r => computeMarginErosion(r, ingredients)).filter(e => e.marginDelta < -1), [recipes, ingredients]);
+
+  const sortedDrifts = useMemo(() => {
+    const d = [...drifts];
+    d.sort((a, b) => {
+      let va, vb;
+      if (driftSort.key === "name") { va = a.ingredient.name.toLowerCase(); vb = b.ingredient.name.toLowerCase(); }
+      else if (driftSort.key === "changePct") { va = Math.abs(a.changePct); vb = Math.abs(b.changePct); }
+      else { va = a[driftSort.key]; vb = b[driftSort.key]; }
+      if (va < vb) return driftSort.dir === "asc" ? -1 : 1;
+      if (va > vb) return driftSort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return d;
+  }, [drifts, driftSort]);
+
+  const selectedIng = selectedIngId ? ingredients.find(i => i.id === selectedIngId) : (drifts.length > 0 ? drifts[0].ingredient : null);
+  const timeline = selectedIng ? getIngredientTimeline(selectedIng) : [];
+
+  const toggleDriftSort = (key) => setDriftSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" });
+  const driftColHeader = (key, label) => (
+    <th onClick={() => toggleDriftSort(key)} style={{ padding: 6, cursor: "pointer", color: C.textMuted, fontSize: 10, textTransform: "uppercase", userSelect: "none", whiteSpace: "nowrap", fontFamily: fontSans }}>
+      {label} {driftSort.key === key ? (driftSort.dir === "asc" ? "▲" : "▼") : ""}
+    </th>
+  );
+
+  return (
+    <>
+      {/* Summary */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+        <Metric label="Tracked" value={summary.trackedCount} unit="" />
+        <Metric label="Updates (90d)" value={summary.recentUpdates} unit="" />
+        <Metric label="Avg change" value={`${summary.avgChangePct >= 0 ? "+" : ""}${summary.avgChangePct.toFixed(1)}`} unit="%" />
+        <Metric label="Margin alerts" value={summary.marginAlerts} unit="" alert={summary.marginAlerts > 0} />
+      </div>
+
+      {/* Timeline chart */}
+      {timeline.length > 1 && (
+        <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>Cost Timeline</div>
+            <select value={selectedIng?.id || ""} onChange={e => setSelectedIngId(e.target.value)} style={{ padding: "4px 8px", border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: fontSans, fontSize: 12, background: C.cream }}>
+              {ingredients.filter(i => i.price_history && i.price_history.length > 0).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+            </select>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={timeline} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+              <XAxis dataKey="date" tick={{ fontFamily: fontMono, fontSize: 10 }} />
+              <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} />
+              <Tooltip contentStyle={{ fontFamily: fontSans, fontSize: 12 }} />
+              <Line type="stepAfter" dataKey="price" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Drift table */}
+      {sortedDrifts.length > 0 && (
+        <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20, overflowX: "auto" }}>
+          <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Price Changes</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fontSans, fontSize: 13 }}>
+            <thead><tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: "left" }}>
+              {driftColHeader("name", "Ingredient")}
+              <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Previous</th>
+              <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Current</th>
+              {driftColHeader("changePct", "Change")}
+              <th style={{ padding: 6, color: C.textMuted, fontSize: 10, textTransform: "uppercase" }}>Recipes</th>
+              <th style={{ width: 60 }}></th>
+            </tr></thead>
+            <tbody>{sortedDrifts.map(d => {
+              const changeColor = d.changePct > 8 ? C.red : d.changePct > 3 ? C.amber : d.changePct < 0 ? C.green : C.textMuted;
+              return (
+                <tr key={d.ingredient.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ padding: "8px 6px", fontWeight: 500 }}>{d.ingredient.name}</td>
+                  <td style={{ padding: "8px 6px", fontFamily: fontMono, color: C.textMuted }}>€{d.previousPrice.toFixed(2)}</td>
+                  <td style={{ padding: "8px 6px", fontFamily: fontMono }}>€{d.currentPrice.toFixed(2)}</td>
+                  <td style={{ padding: "8px 6px", fontFamily: fontMono, fontWeight: 600, color: changeColor }}>{d.changePct >= 0 ? "+" : ""}{d.changePct.toFixed(1)}%</td>
+                  <td style={{ padding: "8px 6px", fontFamily: fontMono, color: C.textMuted }}>{d.affectedRecipeCount}</td>
+                  <td style={{ padding: "8px 6px" }}><button onClick={() => onOpenPriceUpdate(d.ingredient)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: fontSans, fontSize: 11, color: C.green }}>✎</button></td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Margin erosion */}
+      {erosions.length > 0 && (
+        <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}` }}>
+          <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Margin Erosion</div>
+          {erosions.map(e => (
+            <div key={e.recipe.id} style={{ padding: 14, background: C.amberPale, borderRadius: 8, border: `1px solid ${C.amber}30`, marginBottom: 10 }}>
+              <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 6 }}>⚠ {e.recipe.name}</div>
+              <div style={{ display: "flex", gap: 16, fontFamily: fontMono, fontSize: 12, marginBottom: 6 }}>
+                <span>Original: {e.originalMargin.toFixed(1)}%</span>
+                <span>Current: <strong style={{ color: e.currentMargin < e.recipe.targetMargin ? C.red : C.green }}>{e.currentMargin.toFixed(1)}%</strong></span>
+                <span style={{ color: C.red }}>({e.marginDelta.toFixed(1)}%)</span>
+              </div>
+              {e.costDrivers.length > 0 && (
+                <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted }}>
+                  Primary cause: {e.costDrivers[0].ingredient.name} +{e.costDrivers[0].pctIncrease.toFixed(1)}%
+                </div>
+              )}
+              {e.suggestedPrice > 0 && e.currentMargin < e.recipe.targetMargin && (
+                <div style={{ fontFamily: fontSans, fontSize: 11, color: C.text, marginTop: 4 }}>
+                  To restore {e.recipe.targetMargin}%: raise price to €{e.suggestedPrice.toFixed(2)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sortedDrifts.length === 0 && (
+        <div style={{ textAlign: "center", padding: 60, color: C.textMuted }}>
+          <div style={{ fontFamily: font, fontSize: 22, marginBottom: 8 }}>No price changes yet</div>
+          <div style={{ fontFamily: fontSans, fontSize: 14 }}>Update ingredient prices to see cost drift analysis</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Alert Banner ────────────────────────────────────────────────
+function AlertBanner({ alerts, onDismiss, onNavigate }) {
+  const [expanded, setExpanded] = useState(false);
+  if (alerts.length === 0) return null;
+  return (
+    <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 900, maxWidth: 380, width: "100%" }}>
+      {!expanded ? (
+        <button onClick={() => setExpanded(true)} style={{ background: C.amber, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer", boxShadow: C.shadowLg, display: "flex", alignItems: "center", gap: 6 }}>
+          ⚠ {alerts.length} alert{alerts.length > 1 ? "s" : ""}
+        </button>
+      ) : (
+        <div style={{ background: C.card, borderRadius: 10, boxShadow: C.shadowLg, border: `1px solid ${C.border}`, maxHeight: 300, overflow: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>Alerts</span>
+            <button onClick={() => setExpanded(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: C.textMuted }}>×</button>
+          </div>
+          {alerts.map(alert => {
+            const isCritical = alert.severity === "critical";
+            return (
+              <div key={alert.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: isCritical ? C.redPale : "transparent" }}>
+                <div style={{ fontFamily: fontSans, fontSize: 12, color: isCritical ? C.red : C.amber, marginBottom: 4 }}>{alert.message}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => onDismiss(alert.id)} style={{ background: "none", border: "none", fontFamily: fontSans, fontSize: 11, color: C.textMuted, cursor: "pointer", padding: 0 }}>Dismiss</button>
+                  <button onClick={() => { onNavigate(alert.type); setExpanded(false); }} style={{ background: "none", border: "none", fontFamily: fontSans, fontSize: 11, color: C.green, cursor: "pointer", padding: 0, fontWeight: 600 }}>Take action →</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Settings ────────────────────────────────────────────────────
+function SettingsPanel({ settings, onChange }) {
+  const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
+  return (
+    <div style={{ maxWidth: 500 }}>
+      <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px" }}>Settings</h2>
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}` }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted }}>Supplier & Cost Tracking</div>
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Price spike alert threshold (%)</span>
+          <input type="number" step="1" min="1" value={settings.priceSpikeThreshold} onChange={e => onChange({ ...settings, priceSpikeThreshold: parseFloat(e.target.value) || 5 })} style={inputStyle} />
+        </label>
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Margin alert threshold (% below target)</span>
+          <input type="number" step="1" min="1" value={settings.marginAlertThreshold} onChange={e => onChange({ ...settings, marginAlertThreshold: parseFloat(e.target.value) || 5 })} style={inputStyle} />
+        </label>
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Price staleness warning after (days)</span>
+          <input type="number" step="1" min="1" value={settings.stalePriceDays} onChange={e => onChange({ ...settings, stalePriceDays: parseInt(e.target.value) || 90 })} style={inputStyle} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <input type="checkbox" checked={settings.autoSnapshot} onChange={e => onChange({ ...settings, autoSnapshot: e.target.checked })} />
+          <span style={{ fontFamily: fontSans, fontSize: 13 }}>Auto-snapshot on shift save</span>
+        </label>
+        <Btn variant="secondary" onClick={() => onChange(DEFAULT_SETTINGS)} style={{ fontSize: 12 }}>Reset to defaults</Btn>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ────────────────────────────────────────────────────────
-const SK = "estudantina-costing-v5";
 export default function App() {
   const [ingredients, setIngredients] = useState(DEFAULT_INGREDIENTS);
   const [recipes, setRecipes] = useState(DEFAULT_RECIPES);
@@ -672,18 +982,27 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const stRef = useRef(null);
+  // v6 new state
+  const [suppliers, setSuppliers] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [alerts, setAlerts] = useState([]);
+  const [supplierView, setSupplierView] = useState("list"); // "list" | "detail" | "drift"
+  const [selectedSupplierId, setSelectedSupplierId] = useState(null);
+  const [priceUpdateIngredient, setPriceUpdateIngredient] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
-        let raw = await store.get(SK);
-        if (!raw) raw = await store.get("estudantina-costing-v4");
-        if (raw) {
-          const d = JSON.parse(raw);
+        const { data, needsMigration } = await loadData(store);
+        if (data) {
+          const d = needsMigration ? migrateToV6(data) : data;
           if (d.ingredients?.length) setIngredients(d.ingredients);
           if (d.recipes?.length) setRecipes(d.recipes);
           if (d.shifts?.length) setShifts(d.shifts);
           if (d.shift_templates?.length) setShiftTemplates(d.shift_templates);
+          if (d.suppliers?.length) setSuppliers(d.suppliers);
+          if (d.settings) setSettings(d.settings);
+          if (d.alerts?.length) setAlerts(d.alerts);
         }
       } catch (e) { console.warn(e); }
       setLoaded(true);
@@ -692,20 +1011,34 @@ export default function App() {
 
   const persist = useCallback(async () => {
     setSaveStatus("saving");
-    try { await store.set(SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates })); setSaveStatus("saved"); } catch { setSaveStatus("error"); }
+    try {
+      await store.set(CURRENT_SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts }));
+      setSaveStatus("saved");
+    } catch { setSaveStatus("error"); }
     clearTimeout(stRef.current); stRef.current = setTimeout(() => setSaveStatus(null), 2000);
-  }, [ingredients, recipes, shifts, shiftTemplates]);
+  }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts]);
 
-  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, loaded, persist]);
+  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, loaded, persist]);
+
+  // Regenerate alerts when ingredients/recipes/settings change
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => {
+      const newAlerts = generateAlerts(ingredients, recipes, settings);
+      setAlerts(prev => mergeAlerts(prev, newAlerts));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [ingredients, recipes, settings, loaded]);
 
   const filtered = useMemo(() => { let r = recipes; if (filter !== "All") r = r.filter(x => x.category === filter); if (search) r = r.filter(x => x.name.toLowerCase().includes(search.toLowerCase())); return r; }, [recipes, filter, search]);
   const stats = useMemo(() => { let tm = 0, cp = 0, ac = 0; recipes.forEach(r => { const uc = calcUnitCost(r, ingredients); const m = getMargin(r.sellingPrice, uc); if (r.sellingPrice > 0) { tm += m; cp++; } if (m < r.targetMargin && r.sellingPrice > 0) ac++; }); return { avg: cp > 0 ? tm / cp : 0, alerts: ac, total: recipes.length }; }, [recipes, ingredients]);
 
   const handleSaveShift = (shift) => {
+    const stamped = stampShiftSnapshots(shift, recipes, ingredients);
     if (editingShift) {
-      setShifts(prev => editShift(prev, shift.id, shift));
+      setShifts(prev => editShift(prev, stamped.id, stamped));
     } else {
-      setShifts(prev => addShift(prev, { ...shift, id: uid() }));
+      setShifts(prev => addShift(prev, { ...stamped, id: uid() }));
     }
     setEditingShift(null);
     setShiftView("dashboard");
@@ -716,8 +1049,16 @@ export default function App() {
   const handleSaveTemplate = (template) => setShiftTemplates(prev => [...prev, template]);
   const handleDeleteTemplate = (id) => setShiftTemplates(prev => prev.filter(t => t.id !== id));
   const handleLogAsReal = (shiftData) => {
-    setShifts(prev => addShift(prev, { ...shiftData, id: uid() }));
+    const stamped = stampShiftSnapshots(shiftData, recipes, ingredients);
+    setShifts(prev => addShift(prev, { ...stamped, id: uid() }));
     setShiftView("dashboard");
+  };
+  const handlePriceUpdate = (updatedIngredient) => {
+    setIngredients(prev => prev.map(i => i.id === updatedIngredient.id ? updatedIngredient : i));
+    setPriceUpdateIngredient(null);
+  };
+  const handleDismissAlert = (alertId) => {
+    setAlerts(prev => dismissAlertFn(prev, alertId));
   };
 
   const generateRandomShifts = () => {
@@ -740,7 +1081,7 @@ export default function App() {
         const qty = Math.round(baseQty * busyFactor * (isFullDay ? 1.6 : 0.8) * (0.3 + Math.random() * 1.0));
         if (qty > 0 && Math.random() > 0.2) sales.push({ recipe_id: r.id, quantity: qty });
       }
-      newShifts.push({
+      const rawShift = {
         id: uid(),
         date: d.toISOString().slice(0, 10),
         period,
@@ -749,7 +1090,8 @@ export default function App() {
         hourly_rate: 5.50,
         sales,
         notes: isWeekend ? "Weekend" : "",
-      });
+      };
+      newShifts.push(stampShiftSnapshots(rawShift, recipes, ingredients));
     }
     setShifts(newShifts);
     setShiftView("dashboard");
@@ -770,10 +1112,14 @@ export default function App() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <h1 style={{ fontFamily: font, fontSize: 28, fontWeight: 400, margin: 0, fontStyle: "italic" }}>Estudantina</h1>
-              <div style={{ display: "flex", gap: 2, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 2 }}>
+              <div style={{ display: "flex", gap: 2, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 2, overflowX: "auto" }}>
                 <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
                 <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
                 <button onClick={() => setView("menu")} style={tabStyle(view === "menu")}>Menu</button>
+                <button onClick={() => { setView("suppliers"); setSupplierView("list"); }} style={tabStyle(view === "suppliers")}>
+                  Suppliers{getActiveAlertCount(alerts) > 0 && <span style={{ marginLeft: 4, background: C.red, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>{getActiveAlertCount(alerts)}</span>}
+                </button>
+                <button onClick={() => setView("settings")} style={tabStyle(view === "settings")}>Settings</button>
               </div>
               <SaveIndicator status={saveStatus} />
             </div>
@@ -788,6 +1134,12 @@ export default function App() {
                 <>
                   <Btn variant="secondary" onClick={generateRandomShifts} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
                   <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
+                </>
+              ) : view === "suppliers" ? (
+                <>
+                  {supplierView === "list" && <Btn variant="secondary" onClick={() => setSupplierView("drift")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>📊 Cost Drift</Btn>}
+                  {supplierView === "drift" && <Btn variant="secondary" onClick={() => setSupplierView("list")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Suppliers</Btn>}
+                  {supplierView === "detail" && <Btn variant="secondary" onClick={() => { setSupplierView("list"); setSelectedSupplierId(null); }} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Suppliers</Btn>}
                 </>
               ) : null}
             </div>
@@ -813,12 +1165,27 @@ export default function App() {
           ) : (
             <ShiftForm shift={editingShift} recipes={recipes} ingredients={ingredients} onSave={handleSaveShift} onCancel={() => { setEditingShift(null); setShiftView("dashboard"); }} shiftTemplates={shiftTemplates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={handleDeleteTemplate} onLogAsReal={handleLogAsReal} />
           )
+        ) : view === "suppliers" ? (
+          supplierView === "drift" ? (
+            <CostDriftDashboard ingredients={ingredients} recipes={recipes} suppliers={suppliers} onOpenPriceUpdate={setPriceUpdateIngredient} />
+          ) : supplierView === "detail" && selectedSupplierId ? (
+            <SupplierDetail supplier={suppliers.find(s => s.id === selectedSupplierId)} ingredients={ingredients} recipes={recipes} onOpenPriceUpdate={setPriceUpdateIngredient} onBack={() => { setSupplierView("list"); setSelectedSupplierId(null); }} />
+          ) : (
+            <SupplierList suppliers={suppliers} ingredients={ingredients} onSelectSupplier={(id) => { setSelectedSupplierId(id); setSupplierView("detail"); }} />
+          )
+        ) : view === "settings" ? (
+          <SettingsPanel settings={settings} onChange={setSettings} />
         ) : (
           <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
         )}
+        {/* Alert Banner */}
+        {alerts.filter(a => !a.dismissed).length > 0 && view !== "settings" && (
+          <AlertBanner alerts={alerts.filter(a => !a.dismissed)} onDismiss={handleDismissAlert} onNavigate={(type) => { if (type === "price_spike" || type === "stale_price") { setView("suppliers"); setSupplierView("list"); } else { setView("recipes"); } }} />
+        )}
       </div>
-      <IngredientModal open={showIngModal} onClose={() => setShowIngModal(false)} ingredients={ingredients} onSave={setIngredients} />
+      <IngredientModal open={showIngModal} onClose={() => setShowIngModal(false)} ingredients={ingredients} onSave={setIngredients} onOpenPriceUpdate={setPriceUpdateIngredient} />
       <RecipeModal open={recipeModal.open} onClose={() => setRecipeModal({ open: false, recipe: null })} recipe={recipeModal.recipe} ingredients={ingredients} onSave={rec => setRecipes(prev => { const idx = prev.findIndex(r => r.id === rec.id); if (idx >= 0) { const c = [...prev]; c[idx] = rec; return c; } return [...prev, rec]; })} />
+      <PriceUpdateModal ingredient={priceUpdateIngredient} recipes={recipes} ingredients={ingredients} onSave={handlePriceUpdate} onClose={() => setPriceUpdateIngredient(null)} />
     </div>
   );
 }

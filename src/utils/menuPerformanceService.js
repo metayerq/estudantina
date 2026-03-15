@@ -10,7 +10,9 @@ export function computeMenuPerformance(recipes, ingredients, shifts) {
       const recipe = recipes.find(r => r.id === sale.recipe_id);
       if (!recipe) continue;
       agg[sale.recipe_id].totalQty += sale.quantity;
-      agg[sale.recipe_id].totalRevenue += sale.quantity * recipe.sellingPrice;
+      // Prefer snapshot selling_price for historical accuracy
+      const price = sale.snapshot ? sale.snapshot.selling_price : recipe.sellingPrice;
+      agg[sale.recipe_id].totalRevenue += sale.quantity * price;
     }
   }
 
