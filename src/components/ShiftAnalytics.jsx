@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 import { C, font, fontMono, fontSans, Metric, Btn } from "./shared.jsx";
 import {
   getDailyRevenue, getWeekdayBreakdown, getPeriodComparison,
-  getBestWorstShifts, getMarginTrend,
+  getBestWorstShifts, getMarginTrend, computeDailyFixedCost, computeBreakEvenRevenue,
 } from "../services/analyticsService.js";
 import { THRESHOLDS } from "../utils/shiftMetrics.js";
 
@@ -19,12 +19,34 @@ function formatDate(dateStr) {
   return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-export default function ShiftAnalytics({ shifts, recipes, ingredients, onBack }) {
+export default function ShiftAnalytics({ shifts, recipes, ingredients, fixedCosts, onBack }) {
   const dailyRevenue = useMemo(() => getDailyRevenue(shifts, recipes, ingredients, 30), [shifts, recipes, ingredients]);
   const marginTrend = useMemo(() => getMarginTrend(shifts, recipes, ingredients, 30), [shifts, recipes, ingredients]);
   const periodComp = useMemo(() => getPeriodComparison(shifts, recipes, ingredients), [shifts, recipes, ingredients]);
   const weekdayData = useMemo(() => getWeekdayBreakdown(shifts, recipes, ingredients), [shifts, recipes, ingredients]);
   const bestWorst = useMemo(() => getBestWorstShifts(shifts, recipes, ingredients), [shifts, recipes, ingredients]);
+
+  // Fixed costs
+  const fc = fixedCosts || [];
+  const fixedCostData = useMemo(() => computeDailyFixedCost(fc), [fc]);
+  const breakEvenData = useMemo(() => computeBreakEvenRevenue(shifts, recipes, ingredients, fc), [shifts, recipes, ingredients, fc]);
+  const hasFixedCosts = fixedCostData.monthlyTotal > 0;
+
+  // Aggregate 30-day totals for Monthly P&L
+  const monthlyPL = useMemo(() => {
+    if (!hasFixedCosts || dailyRevenue.length === 0) return null;
+    let totalRevenue = 0, totalCogs = 0, totalGross = 0, totalLabor = 0, totalNetProfit = 0;
+    for (const d of dailyRevenue) {
+      totalRevenue += d.revenue;
+      totalCogs += d.cogs;
+      totalGross += d.grossProfit;
+      totalLabor += d.laborCost;
+      totalNetProfit += d.netProfit; // operating profit (rev - cogs - labor)
+    }
+    const monthlyFixed = fixedCostData.monthlyTotal;
+    const trueNetProfit = totalNetProfit - monthlyFixed;
+    return { totalRevenue, totalCogs, totalGross, totalLabor, totalNetProfit, monthlyFixed, trueNetProfit };
+  }, [dailyRevenue, hasFixedCosts, fixedCostData]);
 
   return (
     <>
@@ -32,6 +54,57 @@ export default function ShiftAnalytics({ shifts, recipes, ingredients, onBack })
       <div style={{ marginBottom: 16 }}>
         <Btn variant="secondary" onClick={onBack} style={{ fontSize: 12 }}>← Back to shifts</Btn>
       </div>
+
+      {/* Monthly P&L Summary — only when fixed costs are configured */}
+      {monthlyPL && (
+        <div style={card}>
+          <div style={sectionTitle}>Monthly P&L Summary — Last 30 days</div>
+          <div style={{ background: C.cream, borderRadius: 8, padding: 20, border: `1px solid ${C.border}` }}>
+            {(() => {
+              const rows = [
+                { label: "Revenue", value: monthlyPL.totalRevenue },
+                { label: "COGS", value: -monthlyPL.totalCogs },
+                { label: "Gross Profit", value: monthlyPL.totalGross, line: true },
+                { label: "Labor", value: -monthlyPL.totalLabor },
+                { label: "Operating Profit", value: monthlyPL.totalNetProfit, line: true },
+                { label: "Fixed Costs", value: -monthlyPL.monthlyFixed },
+                { label: "Net Profit", value: monthlyPL.trueNetProfit, line: true, bold: true, final: true },
+              ];
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 0, maxWidth: 400 }}>
+                  {rows.map((r, i) => (
+                    <div key={i}>
+                      {r.line && <div style={{ borderTop: r.final ? `2px solid ${C.text}` : `1px solid ${C.border}`, marginBottom: 6, marginTop: 4 }} />}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0" }}>
+                        <span style={{ fontFamily: fontSans, fontSize: 14, fontWeight: r.bold ? 700 : 400, color: r.final ? (r.value >= 0 ? C.green : C.red) : C.text }}>{r.label}</span>
+                        <span style={{ fontFamily: fontMono, fontSize: 14, fontWeight: r.bold ? 700 : 400, color: r.value < 0 ? C.red : (r.final && r.value >= 0 ? C.green : C.text) }}>
+                          {r.value < 0 ? `-€${Math.abs(r.value).toFixed(0)}` : `€${r.value.toFixed(0)}`}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {breakEvenData && (
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: "flex", gap: 24 }}>
+                <div>
+                  <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 2 }}>Daily break-even</div>
+                  <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600, color: C.amber }}>€{breakEvenData.breakEvenRevenue.toFixed(0)}/day</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 2 }}>Avg gross margin</div>
+                  <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600 }}>{breakEvenData.avgGrossMarginPct.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 2 }}>Daily overhead</div>
+                  <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600 }}>€{fixedCostData.dailyCost.toFixed(0)}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Revenue Trend — 30 days */}
       <div style={card}>
@@ -42,10 +115,16 @@ export default function ShiftAnalytics({ shifts, recipes, ingredients, onBack })
             <XAxis dataKey="date" tick={{ fontFamily: fontMono, fontSize: 9 }} tickFormatter={d => d.slice(8)} interval={2} />
             <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} tickFormatter={v => `€${v}`} />
             <Tooltip {...ttStyle} labelFormatter={d => formatDate(d)} formatter={(v, name) => [`€${Number(v).toFixed(2)}`, name === "revenue" ? "Revenue" : name === "netProfit" ? "Net Profit" : name]} />
+            {hasFixedCosts && breakEvenData && (
+              <ReferenceLine y={breakEvenData.breakEvenRevenue} stroke={C.amber} strokeDasharray="5 5" label={{ value: `BE €${breakEvenData.breakEvenRevenue.toFixed(0)}`, position: "insideTopRight", fontFamily: fontMono, fontSize: 10, fill: C.amber }} />
+            )}
             <Bar dataKey="revenue" radius={[3, 3, 0, 0]}>
-              {dailyRevenue.map((entry, i) => (
-                <Cell key={i} fill={entry.netProfit >= 0 ? C.green : C.red} opacity={entry.revenue === 0 ? 0.1 : 0.8} />
-              ))}
+              {dailyRevenue.map((entry, i) => {
+                const dayProfit = hasFixedCosts ? entry.netProfit - fixedCostData.dailyCost : entry.netProfit;
+                return (
+                  <Cell key={i} fill={dayProfit >= 0 ? C.green : C.red} opacity={entry.revenue === 0 ? 0.1 : 0.8} />
+                );
+              })}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

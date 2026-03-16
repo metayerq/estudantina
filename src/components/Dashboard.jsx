@@ -4,14 +4,14 @@ import { C, font, fontMono, fontSans, Badge, Metric, Btn, catColors } from "./sh
 import {
   getDailyRevenue, getWeekdayBreakdown, getTopSellers,
   getFoodCostPct, getTodaySnapshot, getQuickStats, getMarginTrend,
-  filterShiftsByDays,
+  filterShiftsByDays, computeDailyFixedCost, computeBreakEvenRevenue,
 } from "../services/analyticsService.js";
 import { THRESHOLDS } from "../utils/shiftMetrics.js";
 
 const card = { background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 };
 const sectionTitle = { fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 14, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted };
 
-export default function Dashboard({ shifts, recipes, ingredients, alerts, onLogShift, onSimulate, onNavigate }) {
+export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedCosts, onLogShift, onSimulate, onNavigate }) {
   const quickStats = useMemo(() => getQuickStats(recipes, ingredients, alerts), [recipes, ingredients, alerts]);
   const foodCostPct = useMemo(() => getFoodCostPct(shifts, recipes, ingredients), [shifts, recipes, ingredients]);
   const todaySnap = useMemo(() => getTodaySnapshot(shifts, recipes, ingredients), [shifts, recipes, ingredients]);
@@ -22,6 +22,12 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, onLogS
     return getTopSellers(recent, recipes, ingredients, 5);
   }, [shifts, recipes, ingredients]);
   const weekdayData = useMemo(() => getWeekdayBreakdown(shifts, recipes, ingredients), [shifts, recipes, ingredients]);
+
+  // Fixed costs
+  const fc = fixedCosts || [];
+  const fixedCostData = useMemo(() => computeDailyFixedCost(fc), [fc]);
+  const breakEvenData = useMemo(() => computeBreakEvenRevenue(shifts, recipes, ingredients, fc), [shifts, recipes, ingredients, fc]);
+  const hasFixedCosts = fixedCostData.monthlyTotal > 0;
 
   // Empty state
   if (shifts.length === 0) {
@@ -50,19 +56,72 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, onLogS
         <Metric label="Avg. margin" value={quickStats.avgMargin.toFixed(1)} unit="%" />
         <Metric label="Food cost" value={foodCostPct.toFixed(1)} unit="%" alert={foodCostPct > 35} />
         <Metric label="Alerts" value={quickStats.activeAlerts} unit="" alert={quickStats.activeAlerts > 0} />
+        {hasFixedCosts && (
+          <>
+            <Metric label="Daily overhead" value={`€${fixedCostData.dailyCost.toFixed(0)}`} unit="" />
+            {breakEvenData && <Metric label="Break-even" value={`€${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" />}
+          </>
+        )}
       </div>
 
       {/* Today's Snapshot */}
       <div style={card}>
         <div style={sectionTitle}>Today</div>
         {todaySnap ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
-            <Metric label="Revenue" value={`€${todaySnap.revenue.toFixed(0)}`} unit="" />
-            <Metric label="COGS" value={`€${todaySnap.cogs.toFixed(0)}`} unit="" />
-            <Metric label="Gross profit" value={`€${todaySnap.grossProfit.toFixed(0)}`} unit="" />
-            <Metric label="Net profit" value={`€${todaySnap.netProfit.toFixed(0)}`} unit="" alert={todaySnap.netProfit < 0} />
-            <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > 35} />
-          </div>
+          hasFixedCosts ? (
+            /* Full P&L with fixed costs */
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12, marginBottom: 16 }}>
+                <Metric label="Revenue" value={`€${todaySnap.revenue.toFixed(0)}`} unit="" />
+                <Metric label="COGS" value={`€${todaySnap.cogs.toFixed(0)}`} unit="" />
+                <Metric label="Gross profit" value={`€${todaySnap.grossProfit.toFixed(0)}`} unit="" />
+                <Metric label="Labor" value={`€${todaySnap.laborCost.toFixed(0)}`} unit="" />
+                <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > 35} />
+              </div>
+              {/* P&L waterfall */}
+              <div style={{ background: C.cream, borderRadius: 8, padding: 16, border: `1px solid ${C.border}` }}>
+                <div style={{ fontFamily: fontSans, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted, marginBottom: 10 }}>P&L Breakdown</div>
+                {(() => {
+                  const operatingProfit = todaySnap.netProfit; // revenue - cogs - labor
+                  const dailyFixed = fixedCostData.dailyCost;
+                  const trueNetProfit = operatingProfit - dailyFixed;
+                  const rows = [
+                    { label: "Revenue", value: todaySnap.revenue, sign: "" },
+                    { label: "COGS", value: -todaySnap.cogs, sign: "-" },
+                    { label: "Gross Profit", value: todaySnap.grossProfit, sign: "", bold: false, line: true },
+                    { label: "Labor", value: -todaySnap.laborCost, sign: "-" },
+                    { label: "Operating Profit", value: operatingProfit, sign: "", bold: false, line: true },
+                    { label: "Fixed Costs", value: -dailyFixed, sign: "-" },
+                    { label: "Net Profit", value: trueNetProfit, sign: "", bold: true, line: true, final: true },
+                  ];
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                      {rows.map((r, i) => (
+                        <div key={i}>
+                          {r.line && <div style={{ borderTop: r.final ? `2px solid ${C.text}` : `1px solid ${C.border}`, marginBottom: 6, marginTop: 2 }} />}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+                            <span style={{ fontFamily: fontSans, fontSize: 13, fontWeight: r.bold ? 700 : 400, color: r.final ? (r.value >= 0 ? C.green : C.red) : C.text }}>{r.label}</span>
+                            <span style={{ fontFamily: fontMono, fontSize: 13, fontWeight: r.bold ? 700 : 400, color: r.value < 0 ? C.red : (r.final ? C.green : C.text) }}>
+                              {r.value < 0 ? `-€${Math.abs(r.value).toFixed(0)}` : `€${r.value.toFixed(0)}`}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : (
+            /* Original layout without fixed costs */
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
+              <Metric label="Revenue" value={`€${todaySnap.revenue.toFixed(0)}`} unit="" />
+              <Metric label="COGS" value={`€${todaySnap.cogs.toFixed(0)}`} unit="" />
+              <Metric label="Gross profit" value={`€${todaySnap.grossProfit.toFixed(0)}`} unit="" />
+              <Metric label="Net profit" value={`€${todaySnap.netProfit.toFixed(0)}`} unit="" alert={todaySnap.netProfit < 0} />
+              <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > 35} />
+            </div>
+          )
         ) : (
           <div style={{ fontFamily: fontSans, fontSize: 13, color: C.textMuted, display: "flex", alignItems: "center", gap: 12 }}>
             No shifts logged today
@@ -80,10 +139,16 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, onLogS
             <XAxis dataKey="dayName" tick={{ fontFamily: fontMono, fontSize: 11 }} />
             <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} tickFormatter={v => `€${v}`} />
             <Tooltip {...ttStyle} formatter={(v) => [`€${Number(v).toFixed(2)}`, ""]} />
+            {hasFixedCosts && breakEvenData && (
+              <ReferenceLine y={breakEvenData.breakEvenRevenue} stroke={C.amber} strokeDasharray="5 5" label={{ value: `BE €${breakEvenData.breakEvenRevenue.toFixed(0)}`, position: "insideTopRight", fontFamily: fontMono, fontSize: 10, fill: C.amber }} />
+            )}
             <Bar dataKey="revenue" radius={[4, 4, 0, 0]}>
-              {weeklyRevenue.map((entry, i) => (
-                <Cell key={i} fill={entry.netProfit >= 0 ? C.green : C.red} opacity={entry.revenue === 0 ? 0.15 : 0.85} />
-              ))}
+              {weeklyRevenue.map((entry, i) => {
+                const dayProfit = hasFixedCosts ? entry.netProfit - fixedCostData.dailyCost : entry.netProfit;
+                return (
+                  <Cell key={i} fill={dayProfit >= 0 ? C.green : C.red} opacity={entry.revenue === 0 ? 0.15 : 0.85} />
+                );
+              })}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

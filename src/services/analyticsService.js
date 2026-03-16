@@ -300,3 +300,54 @@ export function getQuickStats(recipes, ingredients, alerts) {
     activeAlerts: getActiveAlertCount(alerts),
   };
 }
+
+// ─── Fixed Cost Allocation ──────────────────────────────────
+
+/**
+ * Compute monthly total and daily allocation from fixed costs.
+ * Converts quarterly (÷3) and annual (÷12) to monthly equivalent, divides by 30.
+ */
+export function computeDailyFixedCost(fixedCosts) {
+  let monthlyTotal = 0;
+  for (const fc of fixedCosts) {
+    if (!fc.active) continue;
+    if (fc.frequency === "monthly") monthlyTotal += fc.amount;
+    else if (fc.frequency === "quarterly") monthlyTotal += fc.amount / 3;
+    else if (fc.frequency === "annual") monthlyTotal += fc.amount / 12;
+  }
+  return { monthlyTotal, dailyCost: monthlyTotal / 30 };
+}
+
+/**
+ * Compute daily break-even revenue needed to cover labor + fixed costs.
+ * Uses average gross margin from all shifts.
+ * Returns { breakEvenRevenue, avgGrossMarginPct, dailyFixedCost, avgDailyLabor } or null if no data.
+ */
+export function computeBreakEvenRevenue(shifts, recipes, ingredients, fixedCosts) {
+  if (shifts.length === 0) return null;
+
+  let totalRev = 0, totalGP = 0, totalLabor = 0, dayCount = 0;
+  const days = new Set();
+  for (const shift of shifts) {
+    const m = computeShiftMetrics(shift, recipes, ingredients);
+    totalRev += m.revenue;
+    totalGP += m.gross_profit;
+    totalLabor += m.labor_cost;
+    days.add(shift.date);
+  }
+  dayCount = days.size || 1;
+
+  if (totalRev === 0) return null;
+
+  const avgGrossMarginPct = (totalGP / totalRev) * 100;
+  const avgDailyLabor = totalLabor / dayCount;
+  const { dailyCost } = computeDailyFixedCost(fixedCosts);
+
+  // Break-even: revenue where gross_profit covers labor + fixed costs
+  // revenue × (marginPct/100) = avgDailyLabor + dailyCost
+  const breakEvenRevenue = avgGrossMarginPct > 0
+    ? (avgDailyLabor + dailyCost) / (avgGrossMarginPct / 100)
+    : 0;
+
+  return { breakEvenRevenue, avgGrossMarginPct, dailyFixedCost: dailyCost, avgDailyLabor };
+}

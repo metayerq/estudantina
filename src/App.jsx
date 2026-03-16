@@ -946,11 +946,166 @@ function AlertBanner({ alerts, onDismiss, onNavigate }) {
   );
 }
 
+// ─── Simulator Config ────────────────────────────────────────────
+const DEFAULT_SIM_CONFIG = {
+  targetDailyRevenue: 350,
+  openDaysPerWeek: 6,
+  daysToSimulate: 30,
+  staffWeekday: 1,
+  staffWeekend: 2,
+  hourlyRate: 5.50,
+  typicalPeriod: "afternoon",
+  weekendBoost: 1.3,
+};
+
+function SimulatorConfigModal({ config, onChange, onGenerate, onCancel, recipes }) {
+  const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
+  const labelStyle = { fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 };
+  const set = (k, v) => onChange({ ...config, [k]: v });
+  const annualEstimate = config.targetDailyRevenue * config.openDaysPerWeek * 52;
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <label>
+          <span style={labelStyle}>CA journalier cible (€)</span>
+          <input type="number" step="10" min="50" value={config.targetDailyRevenue} onChange={e => set("targetDailyRevenue", parseFloat(e.target.value) || 0)} style={inputStyle} />
+        </label>
+        <label>
+          <span style={labelStyle}>Jours ouverts / semaine</span>
+          <input type="number" step="1" min="1" max="7" value={config.openDaysPerWeek} onChange={e => set("openDaysPerWeek", parseInt(e.target.value) || 6)} style={inputStyle} />
+        </label>
+      </div>
+
+      <div style={{ background: C.cream, borderRadius: 8, padding: 12, border: `1px solid ${C.border}`, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>{"CA annuel estimé :"}</span>
+        <span style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 700, color: C.green }}>{"€"}{annualEstimate.toLocaleString("fr-FR")}</span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <label>
+          <span style={labelStyle}>{"Jours à simuler"}</span>
+          <input type="number" step="1" min="7" max="90" value={config.daysToSimulate} onChange={e => set("daysToSimulate", parseInt(e.target.value) || 30)} style={inputStyle} />
+        </label>
+        <label>
+          <span style={labelStyle}>{"Période typique"}</span>
+          <select value={config.typicalPeriod} onChange={e => set("typicalPeriod", e.target.value)} style={inputStyle}>
+            <option value="morning">Morning</option>
+            <option value="afternoon">Afternoon</option>
+            <option value="full_day">Full Day</option>
+          </select>
+        </label>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <label>
+          <span style={labelStyle}>Personnel semaine</span>
+          <input type="number" step="1" min="1" max="10" value={config.staffWeekday} onChange={e => set("staffWeekday", parseInt(e.target.value) || 1)} style={inputStyle} />
+        </label>
+        <label>
+          <span style={labelStyle}>Personnel weekend</span>
+          <input type="number" step="1" min="1" max="10" value={config.staffWeekend} onChange={e => set("staffWeekend", parseInt(e.target.value) || 2)} style={inputStyle} />
+        </label>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <label>
+          <span style={labelStyle}>{"Taux horaire (€/h)"}</span>
+          <input type="number" step="0.50" min="0" value={config.hourlyRate} onChange={e => set("hourlyRate", parseFloat(e.target.value) || 0)} style={inputStyle} />
+        </label>
+        <label>
+          <span style={labelStyle}>Facteur weekend (x)</span>
+          <input type="number" step="0.1" min="1.0" max="2.0" value={config.weekendBoost} onChange={e => set("weekendBoost", parseFloat(e.target.value) || 1)} style={inputStyle} />
+        </label>
+      </div>
+
+      {recipes.length === 0 && (
+        <div style={{ fontFamily: fontSans, fontSize: 12, color: C.red, marginBottom: 14 }}>Aucune recette — ajoutez des recettes avant de simuler.</div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn variant="secondary" onClick={onCancel} style={{ fontSize: 12 }}>Annuler</Btn>
+        <Btn onClick={() => recipes.length > 0 && onGenerate(config)} style={{ fontSize: 12, opacity: recipes.length > 0 ? 1 : 0.5 }}>{"🎲 Générer"}</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── Fixed Cost Form ─────────────────────────────────────────────
+const FIXED_COST_CATEGORIES = ["Rent", "Utilities", "Insurance", "Maintenance", "Marketing", "Subscriptions", "Other"];
+const FIXED_COST_FREQUENCIES = [{ value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" }, { value: "annual", label: "Annual" }];
+
+function FixedCostForm({ cost, onSave, onCancel }) {
+  const [f, setF] = useState({ ...cost, amount: cost.amount || "" });
+  const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
+  const valid = f.name.trim() && parseFloat(f.amount) > 0;
+  return (
+    <div>
+      <label style={{ display: "block", marginBottom: 14 }}>
+        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Name</span>
+        <input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="e.g. Loyer mensuel" style={inputStyle} />
+      </label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <label>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Amount (€)</span>
+          <input type="number" step="0.01" min="0" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} style={inputStyle} />
+        </label>
+        <label>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Frequency</span>
+          <select value={f.frequency} onChange={e => setF({ ...f, frequency: e.target.value })} style={inputStyle}>
+            {FIXED_COST_FREQUENCIES.map(fr => <option key={fr.value} value={fr.value}>{fr.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <label style={{ display: "block", marginBottom: 14 }}>
+        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Category</span>
+        <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })} style={inputStyle}>
+          {FIXED_COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </label>
+      <label style={{ display: "block", marginBottom: 14 }}>
+        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Notes (optional)</span>
+        <input value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} style={inputStyle} />
+      </label>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn variant="secondary" onClick={onCancel} style={{ fontSize: 12 }}>Cancel</Btn>
+        <Btn onClick={() => valid && onSave({ ...f, amount: parseFloat(f.amount) || 0 })} style={{ fontSize: 12, opacity: valid ? 1 : 0.5 }}>
+          {cost.id ? "Update" : "Add"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 // ─── Settings ────────────────────────────────────────────────────
-function SettingsPanel({ settings, onChange, allData, onImportData }) {
+function SettingsPanel({ settings, onChange, fixedCosts, onChangeFixedCosts, allData, onImportData }) {
   const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
   const fileInputRef = useRef(null);
   const [importConfirm, setImportConfirm] = useState(null);
+  const [editingFC, setEditingFC] = useState(null);
+
+  // Fixed cost helpers
+  const activeFC = (fixedCosts || []).filter(fc => fc.active);
+  let fcMonthlyTotal = 0;
+  for (const fc of activeFC) {
+    if (fc.frequency === "monthly") fcMonthlyTotal += fc.amount;
+    else if (fc.frequency === "quarterly") fcMonthlyTotal += fc.amount / 3;
+    else if (fc.frequency === "annual") fcMonthlyTotal += fc.amount / 12;
+  }
+  const fcDailyCost = fcMonthlyTotal / 30;
+
+  const saveFC = (fc) => {
+    if (fc.id) {
+      onChangeFixedCosts(prev => prev.map(x => x.id === fc.id ? fc : x));
+    } else {
+      onChangeFixedCosts(prev => [...prev, { ...fc, id: `fc_${uid()}` }]);
+    }
+    setEditingFC(null);
+  };
+  const deleteFC = (id) => onChangeFixedCosts(prev => prev.filter(x => x.id !== id));
+  const toggleActiveFC = (id) => onChangeFixedCosts(prev => prev.map(x => x.id === id ? { ...x, active: !x.active } : x));
+  const blankFC = () => ({ id: "", name: "", amount: "", frequency: "monthly", category: "Other", active: true, notes: "" });
+  const smallBtnStyle = { background: "none", border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: fontSans, fontSize: 11, color: C.textMuted };
 
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
@@ -1005,6 +1160,47 @@ function SettingsPanel({ settings, onChange, allData, onImportData }) {
         </label>
         <Btn variant="secondary" onClick={() => onChange(DEFAULT_SETTINGS)} style={{ fontSize: 12 }}>Reset to defaults</Btn>
       </div>
+
+      {/* Fixed Costs / Charges Fixes */}
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginTop: 20 }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted }}>Fixed Costs (Charges Fixes)</div>
+
+        {activeFC.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16, padding: 12, background: C.cream, borderRadius: 8, border: `1px solid ${C.border}` }}>
+            <Metric label="Monthly total" value={`€${fcMonthlyTotal.toFixed(0)}`} unit="" size="small" />
+            <Metric label="Daily allocation" value={`€${fcDailyCost.toFixed(2)}`} unit="" size="small" />
+          </div>
+        )}
+
+        {(fixedCosts || []).map(fc => (
+          <div key={fc.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.border}`, opacity: fc.active ? 1 : 0.4 }}>
+            <div>
+              <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>{fc.name}</div>
+              <div style={{ fontFamily: fontMono, fontSize: 11, color: C.textMuted }}>€{fc.amount.toFixed(2)} / {fc.frequency} · {fc.category}</div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => toggleActiveFC(fc.id)} style={smallBtnStyle}>{fc.active ? "Disable" : "Enable"}</button>
+              <button onClick={() => setEditingFC(fc)} style={smallBtnStyle}>Edit</button>
+              <button onClick={() => deleteFC(fc.id)} style={{ ...smallBtnStyle, color: C.red }}>×</button>
+            </div>
+          </div>
+        ))}
+
+        {(fixedCosts || []).length === 0 && (
+          <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12 }}>No fixed costs configured. Add your rent, utilities, and other recurring costs to see true profitability.</div>
+        )}
+
+        <div style={{ marginTop: 14 }}>
+          <Btn variant="secondary" onClick={() => setEditingFC(blankFC())} style={{ fontSize: 12 }}>+ Add fixed cost</Btn>
+        </div>
+      </div>
+
+      {/* Fixed Cost Edit Modal */}
+      {editingFC && (
+        <Modal open={true} onClose={() => setEditingFC(null)} title={editingFC.id ? "Edit fixed cost" : "Add fixed cost"}>
+          <FixedCostForm cost={editingFC} onSave={saveFC} onCancel={() => setEditingFC(null)} />
+        </Modal>
+      )}
 
       {/* Data Management */}
       <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginTop: 20 }}>
@@ -1069,9 +1265,13 @@ export default function App() {
   const [suppliers, setSuppliers] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [alerts, setAlerts] = useState([]);
+  const [fixedCosts, setFixedCosts] = useState([]);
   const [supplierView, setSupplierView] = useState("list"); // "list" | "detail" | "drift"
   const [selectedSupplierId, setSelectedSupplierId] = useState(null);
   const [priceUpdateIngredient, setPriceUpdateIngredient] = useState(null);
+  // Simulator config
+  const [simConfig, setSimConfig] = useState(null);
+  const [simConfigSaved, setSimConfigSaved] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -1090,6 +1290,7 @@ export default function App() {
           setSuppliers(resolvedSuppliers);
           if (d.settings) setSettings(d.settings);
           if (d.alerts?.length) setAlerts(d.alerts);
+          if (d.fixed_costs?.length) setFixedCosts(d.fixed_costs);
         } else {
           // Fresh install — no saved data, seed price history + extract suppliers from defaults
           const seededIngs = ensurePriceHistory(DEFAULT_INGREDIENTS);
@@ -1098,6 +1299,8 @@ export default function App() {
           setSuppliers(defaultSuppliers);
         }
       } catch (e) { console.warn(e); }
+      // Load saved simulator config
+      try { const sc = await store.get("estudantina-sim-config"); if (sc) setSimConfigSaved(JSON.parse(sc)); } catch {}
       setLoaded(true);
     })();
   }, []);
@@ -1105,13 +1308,13 @@ export default function App() {
   const persist = useCallback(async () => {
     setSaveStatus("saving");
     try {
-      await store.set(CURRENT_SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts }));
+      await store.set(CURRENT_SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }));
       setSaveStatus("saved");
     } catch { setSaveStatus("error"); }
     clearTimeout(stRef.current); stRef.current = setTimeout(() => setSaveStatus(null), 2000);
-  }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts]);
+  }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, fixedCosts]);
 
-  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, loaded, persist]);
+  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, fixedCosts, loaded, persist]);
 
   // Regenerate alerts when ingredients/recipes/settings change
   useEffect(() => {
@@ -1163,35 +1366,64 @@ export default function App() {
     setSuppliers(resolvedSuppliers);
     setSettings(data.settings || DEFAULT_SETTINGS);
     setAlerts(data.alerts || []);
+    setFixedCosts(data.fixed_costs || []);
   };
 
-  const generateRandomShifts = () => {
+  const openSimConfig = () => setSimConfig(simConfigSaved || { ...DEFAULT_SIM_CONFIG });
+
+  const generateRandomShifts = async (config) => {
+    const { targetDailyRevenue, openDaysPerWeek, daysToSimulate, staffWeekday,
+            staffWeekend, hourlyRate, typicalPeriod, weekendBoost } = config;
     const periods = ["morning", "afternoon", "full_day"];
+    // Closed days: Mon=1 first, then Tue=2, etc.
+    const dayOrder = [1, 2, 3, 4, 5, 6, 0]; // Mon → Sun
+    const closedDays = dayOrder.slice(0, 7 - openDaysPerWeek);
+    const catCap = { Coffee: 40, Pastry: 15, Kombucha: 8 };
+
     const today = new Date();
     const newShifts = [];
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < daysToSimulate; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
       const dayOfWeek = d.getDay();
+      if (closedDays.includes(dayOfWeek)) continue;
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      const period = periods[Math.floor(Math.random() * periods.length)];
+
+      // Daily target with ±15% variance
+      const variance = 1 + (Math.random() * 2 - 1) * 0.15;
+      const dayTarget = targetDailyRevenue * (isWeekend ? weekendBoost : 1.0) * variance;
+
+      // Period: typical 85%, random 15%
+      const period = Math.random() > 0.85 ? periods[Math.floor(Math.random() * 3)] : typicalPeriod;
       const isFullDay = period === "full_day";
-      const staffCount = isFullDay ? (isWeekend ? 3 : 2) : (isWeekend ? 2 : 1);
+      const staffCount = isWeekend ? staffWeekend : staffWeekday;
       const hoursWorked = isFullDay ? (7 + Math.random() * 3) : (3 + Math.random() * 3);
-      const busyFactor = isWeekend ? 1.4 : (0.7 + Math.random() * 0.6);
+
+      // Revenue-targeted sales generation
+      const available = recipes.filter(() => Math.random() > 0.15);
+      if (available.length === 0) continue;
+      const weights = available.map(r => {
+        const catW = r.category === "Coffee" ? 3 : r.category === "Pastry" ? 1.5 : 0.5;
+        return catW * (0.5 + Math.random());
+      });
+      const totalW = weights.reduce((a, b) => a + b, 0);
       const sales = [];
-      for (const r of recipes) {
-        const baseQty = r.category === "Coffee" ? (8 + Math.random() * 20) : r.category === "Pastry" ? (2 + Math.random() * 10) : (1 + Math.random() * 5);
-        const qty = Math.round(baseQty * busyFactor * (isFullDay ? 1.6 : 0.8) * (0.3 + Math.random() * 1.0));
-        if (qty > 0 && Math.random() > 0.2) sales.push({ recipe_id: r.id, quantity: qty });
+      for (let j = 0; j < available.length; j++) {
+        const r = available[j];
+        const share = (weights[j] / totalW) * dayTarget;
+        const cap = catCap[r.category] || 10;
+        const qty = Math.min(Math.round(share / r.sellingPrice), cap);
+        if (qty > 0) sales.push({ recipe_id: r.id, quantity: qty });
       }
+      if (sales.length === 0) continue;
+
       const rawShift = {
         id: uid(),
         date: d.toISOString().slice(0, 10),
         period,
         staff_count: staffCount,
         hours_worked: Math.round(hoursWorked * 2) / 2,
-        hourly_rate: 5.50,
+        hourly_rate: hourlyRate,
         sales,
         notes: isWeekend ? "Weekend" : "",
       };
@@ -1199,6 +1431,8 @@ export default function App() {
     }
     setShifts(newShifts);
     setShiftView("dashboard");
+    // Persist config
+    try { await store.set("estudantina-sim-config", JSON.stringify(config)); setSimConfigSaved(config); } catch {}
   };
 
   const tabStyle = (active) => ({
@@ -1231,7 +1465,7 @@ export default function App() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {view === "dashboard" ? (
                 <>
-                  <Btn variant="secondary" onClick={generateRandomShifts} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
+                  <Btn variant="secondary" onClick={openSimConfig} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
                   <Btn onClick={() => { setView("shifts"); handleNewShift(); }} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
                 </>
               ) : view === "recipes" ? (
@@ -1244,7 +1478,7 @@ export default function App() {
                 <>
                   {shiftView === "dashboard" && <Btn variant="secondary" onClick={() => setShiftView("analytics")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>📊 Analytics</Btn>}
                   {shiftView === "analytics" && <Btn variant="secondary" onClick={() => setShiftView("dashboard")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Shifts</Btn>}
-                  <Btn variant="secondary" onClick={generateRandomShifts} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
+                  <Btn variant="secondary" onClick={openSimConfig} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
                   <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
                 </>
               ) : view === "suppliers" ? (
@@ -1260,7 +1494,7 @@ export default function App() {
       </div>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 16px 40px" }}>
         {view === "dashboard" ? (
-          <Dashboard shifts={shifts} recipes={recipes} ingredients={ingredients} alerts={alerts} onLogShift={() => { setView("shifts"); handleNewShift(); }} onSimulate={generateRandomShifts} onNavigate={setView} />
+          <Dashboard shifts={shifts} recipes={recipes} ingredients={ingredients} alerts={alerts} fixedCosts={fixedCosts} onLogShift={() => { setView("shifts"); handleNewShift(); }} onSimulate={openSimConfig} onNavigate={setView} />
         ) : view === "recipes" ? (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
@@ -1275,7 +1509,7 @@ export default function App() {
           </>
         ) : view === "shifts" ? (
           shiftView === "analytics" ? (
-            <ShiftAnalytics shifts={shifts} recipes={recipes} ingredients={ingredients} onBack={() => setShiftView("dashboard")} />
+            <ShiftAnalytics shifts={shifts} recipes={recipes} ingredients={ingredients} fixedCosts={fixedCosts} onBack={() => setShiftView("dashboard")} />
           ) : shiftView === "dashboard" ? (
             <ShiftDashboard shifts={shifts} recipes={recipes} ingredients={ingredients} onEdit={handleEditShift} onDelete={handleDeleteShift} onNew={handleNewShift} />
           ) : (
@@ -1290,7 +1524,7 @@ export default function App() {
             <SupplierList suppliers={suppliers} ingredients={ingredients} onSelectSupplier={(id) => { setSelectedSupplierId(id); setSupplierView("detail"); }} />
           )
         ) : view === "settings" ? (
-          <SettingsPanel settings={settings} onChange={setSettings} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts }} onImportData={handleImportData} />
+          <SettingsPanel settings={settings} onChange={setSettings} fixedCosts={fixedCosts} onChangeFixedCosts={setFixedCosts} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }} onImportData={handleImportData} />
         ) : (
           <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} menuDateRange={menuDateRange} setMenuDateRange={setMenuDateRange} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
         )}
@@ -1302,6 +1536,11 @@ export default function App() {
       <IngredientModal open={showIngModal} onClose={() => setShowIngModal(false)} ingredients={ingredients} onSave={setIngredients} onOpenPriceUpdate={setPriceUpdateIngredient} />
       <RecipeModal open={recipeModal.open} onClose={() => setRecipeModal({ open: false, recipe: null })} recipe={recipeModal.recipe} ingredients={ingredients} onSave={rec => setRecipes(prev => { const idx = prev.findIndex(r => r.id === rec.id); if (idx >= 0) { const c = [...prev]; c[idx] = rec; return c; } return [...prev, rec]; })} />
       <PriceUpdateModal ingredient={priceUpdateIngredient} recipes={recipes} ingredients={ingredients} onSave={handlePriceUpdate} onClose={() => setPriceUpdateIngredient(null)} />
+      {simConfig && (
+        <Modal open onClose={() => setSimConfig(null)} title="Configuration de la simulation">
+          <SimulatorConfigModal config={simConfig} onChange={setSimConfig} onGenerate={(cfg) => { generateRandomShifts(cfg); setSimConfig(null); }} onCancel={() => setSimConfig(null)} recipes={recipes} />
+        </Modal>
+      )}
     </div>
   );
 }
