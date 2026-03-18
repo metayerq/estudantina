@@ -68,9 +68,9 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
     return (
       <div style={{ textAlign: "center", padding: "80px 20px" }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>☕</div>
-        <h2 style={{ fontFamily: font, fontSize: 24, fontWeight: 400, marginBottom: 8 }}>Welcome to Estudantina</h2>
+        <h2 style={{ fontFamily: font, fontSize: 24, fontWeight: 600, marginBottom: 8, color: C.text }}>Welcome to Café Pilot</h2>
         <p style={{ fontFamily: fontSans, fontSize: 14, color: C.textMuted, marginBottom: 24, maxWidth: 400, margin: "0 auto 24px" }}>
-          Log your first shift or simulate 30 days of data to see business insights here.
+          Log your first shift or simulate 30 days of data to see your business insights.
         </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <Btn onClick={onLogShift}>+ Log a shift</Btn>
@@ -99,13 +99,14 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
     <>
       {/* Period Selector */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 2, background: C.card, borderRadius: 8, padding: 2, border: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", gap: 2, background: C.card, borderRadius: 6, padding: 2, border: `1px solid ${C.border}` }}>
           {PERIOD_OPTIONS.map(opt => (
             <button key={opt.value} onClick={() => onChangePeriod(opt.value)} style={{
-              padding: "6px 14px", borderRadius: 6, border: "none",
-              background: period === opt.value ? C.green : "transparent",
+              padding: "5px 14px", borderRadius: 4, border: "none",
+              background: period === opt.value ? C.text : "transparent",
               color: period === opt.value ? "#fff" : C.textMuted,
-              fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              fontFamily: fontSans, fontSize: 12, fontWeight: 500, cursor: "pointer",
+              transition: "all 0.15s ease",
             }}>{opt.label}</button>
           ))}
         </div>

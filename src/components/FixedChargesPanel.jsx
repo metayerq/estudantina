@@ -101,7 +101,7 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
 
   return (
     <>
-      <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px" }}>Fixed Charges</h2>
+      <h2 style={{ fontFamily: font, fontSize: 24, fontWeight: 700, margin: "0 0 20px" }}>Fixed Charges</h2>
 
       {/* Summary */}
       <div style={card}>
@@ -139,7 +139,7 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
               <span style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>
                 {CATEGORY_ICONS[category] || "📌"} {category}
               </span>
-              <span style={{ fontFamily: fontMono, fontSize: 13, fontWeight: 600, color: C.green }}>
+              <span style={{ fontFamily: fontMono, fontSize: 13, fontWeight: 600, color: C.text }}>
                 {`€${monthlySum.toFixed(0)}/mo`}
               </span>
             </div>

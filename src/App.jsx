@@ -363,14 +363,14 @@ function ShiftForm({ shift, recipes, ingredients, onSave, onCancel, shiftTemplat
 
   return (
     <div>
-      <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.green, marginBottom: 16, padding: 0 }}>← Back to shifts</button>
+      <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.text, marginBottom: 16, padding: 0 }}>← Back to shifts</button>
       {!shift && (
         <div style={{ display: "flex", gap: 2, background: C.border, borderRadius: 8, padding: 2, marginBottom: 16, width: "fit-content" }}>
-          <button onClick={() => setMode("real")} style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: mode === "real" ? C.card : "transparent", color: mode === "real" ? C.green : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Real</button>
+          <button onClick={() => setMode("real")} style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: mode === "real" ? C.card : "transparent", color: mode === "real" ? C.text : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Real</button>
           <button onClick={() => setMode("simulate")} style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: mode === "simulate" ? C.card : "transparent", color: mode === "simulate" ? C.amber : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Simulate</button>
         </div>
       )}
-      <h2 style={{ fontFamily: font, fontSize: 24, margin: "0 0 20px", color: mode === "simulate" ? C.amber : C.green }}>{shift ? "Edit shift" : mode === "simulate" ? "Shift Simulator" : "Log a shift"}</h2>
+      <h2 style={{ fontFamily: font, fontSize: 24, fontWeight: 700, margin: "0 0 20px", color: mode === "simulate" ? C.amber : C.text }}>{shift ? "Edit shift" : mode === "simulate" ? "Shift Simulator" : "Log a shift"}</h2>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: 20, alignItems: "start" }}>
         <div>
           <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 16 }}>
@@ -405,8 +405,8 @@ function ShiftForm({ shift, recipes, ingredients, onSave, onCancel, shiftTemplat
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <button onClick={() => setQty(recipe.id, Math.max(0, qty - 1))} style={{ width: 28, height: 28, borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontSize: 16, color: C.textMuted }}>−</button>
                             <input type="number" min="0" value={qty} onChange={e => setQty(recipe.id, parseInt(e.target.value) || 0)} style={{ width: 48, textAlign: "center", padding: "4px", border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: fontMono, fontSize: 13, background: qty > 0 ? C.greenPale : C.cream }} />
-                            <button onClick={() => setQty(recipe.id, qty + 1)} style={{ width: 28, height: 28, borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontSize: 16, color: C.green }}>+</button>
-                            {qty > 0 && <span style={{ fontFamily: fontMono, fontSize: 11, color: C.green, minWidth: 50, textAlign: "right" }}>{(recipe.sellingPrice * qty).toFixed(2)}€</span>}
+                            <button onClick={() => setQty(recipe.id, qty + 1)} style={{ width: 28, height: 28, borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontSize: 16, color: C.text }}>+</button>
+                            {qty > 0 && <span style={{ fontFamily: fontMono, fontSize: 11, color: C.text, minWidth: 50, textAlign: "right" }}>{(recipe.sellingPrice * qty).toFixed(2)}€</span>}
                           </div>
                         </div>
                       );
@@ -745,7 +745,7 @@ function SupplierDetail({ supplier, ingredients, recipes, onOpenPriceUpdate, onB
   const supplierIngs = getSupplierIngredients(supplier, ingredients);
   return (
     <div>
-      <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.green, marginBottom: 16, padding: 0 }}>← Back to suppliers</button>
+      <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: fontSans, fontSize: 13, color: C.text, marginBottom: 16, padding: 0 }}>← Back to suppliers</button>
       <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontFamily: font, fontSize: 24, margin: 0 }}>{supplier.name}</h2>
@@ -867,7 +867,7 @@ function CostDriftDashboard({ ingredients, recipes, suppliers, onOpenPriceUpdate
                   <td style={{ padding: "8px 6px", fontFamily: fontMono }}>€{d.currentPrice.toFixed(2)}</td>
                   <td style={{ padding: "8px 6px", fontFamily: fontMono, fontWeight: 600, color: changeColor }}>{d.changePct >= 0 ? "+" : ""}{d.changePct.toFixed(1)}%</td>
                   <td style={{ padding: "8px 6px", fontFamily: fontMono, color: C.textMuted }}>{d.affectedRecipeCount}</td>
-                  <td style={{ padding: "8px 6px" }}><button onClick={() => onOpenPriceUpdate(d.ingredient)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: fontSans, fontSize: 11, color: C.green }}>✎</button></td>
+                  <td style={{ padding: "8px 6px" }}><button onClick={() => onOpenPriceUpdate(d.ingredient)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: fontSans, fontSize: 11, color: C.text }}>✎</button></td>
                 </tr>
               );
             })}</tbody>
@@ -935,7 +935,7 @@ function AlertBanner({ alerts, onDismiss, onNavigate }) {
                 <div style={{ fontFamily: fontSans, fontSize: 12, color: isCritical ? C.red : C.amber, marginBottom: 4 }}>{alert.message}</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => onDismiss(alert.id)} style={{ background: "none", border: "none", fontFamily: fontSans, fontSize: 11, color: C.textMuted, cursor: "pointer", padding: 0 }}>Dismiss</button>
-                  <button onClick={() => { onNavigate(alert.type); setExpanded(false); }} style={{ background: "none", border: "none", fontFamily: fontSans, fontSize: 11, color: C.green, cursor: "pointer", padding: 0, fontWeight: 600 }}>Take action →</button>
+                  <button onClick={() => { onNavigate(alert.type); setExpanded(false); }} style={{ background: "none", border: "none", fontFamily: fontSans, fontSize: 11, color: C.text, cursor: "pointer", padding: 0, fontWeight: 600 }}>Take action →</button>
                 </div>
               </div>
             );
@@ -986,7 +986,7 @@ function SimulatorConfigModal({ config, onChange, onGenerate, onCancel, recipes 
 
       <div style={{ background: C.cream, borderRadius: 8, padding: 12, border: `1px solid ${C.border}`, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>{"CA annuel estimé :"}</span>
-        <span style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 700, color: C.green }}>{"€"}{annualEstimate.toLocaleString("fr-FR")}</span>
+        <span style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 700, color: C.text }}>{"€"}{annualEstimate.toLocaleString("fr-FR")}</span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
@@ -1049,7 +1049,7 @@ function SettingsPanel({ settings, onChange, allData, onImportData }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `estudantina-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `cafepilot-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1329,58 +1329,65 @@ export default function App() {
   };
 
   const tabStyle = (active) => ({
-    padding: "6px 16px", borderRadius: 6, border: "none",
-    background: active ? "#fff" : "transparent",
-    color: active ? C.green : "rgba(255,255,255,0.7)",
-    fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer",
+    padding: "8px 12px 10px", border: "none", borderRadius: 0,
+    borderBottom: active ? `2px solid ${C.text}` : "2px solid transparent",
+    background: "transparent",
+    color: active ? C.text : C.textMuted,
+    fontFamily: fontSans, fontSize: 13, fontWeight: active ? 600 : 500, cursor: "pointer",
+    transition: "all 0.15s ease",
+    marginBottom: -1,
   });
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: fontSans, color: C.text }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ background: C.green, color: "#fff", padding: "24px 24px 20px", borderBottom: "3px solid #1E3D28" }}>
-        <div style={{ maxWidth: 960, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <h1 style={{ fontFamily: font, fontSize: 28, fontWeight: 400, margin: 0, fontStyle: "italic" }}>Estudantina</h1>
-              <div style={{ display: "flex", gap: 2, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 2, overflowX: "auto" }}>
-                <button onClick={() => setView("dashboard")} style={tabStyle(view === "dashboard")}>Dashboard</button>
-                <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
-                <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
-                <button onClick={() => setView("menu")} style={tabStyle(view === "menu")}>Menu</button>
-                <button onClick={() => setView("charges")} style={tabStyle(view === "charges")}>Charges</button>
-                <button onClick={() => { setView("suppliers"); setSupplierView("list"); }} style={tabStyle(view === "suppliers")}>
-                  Suppliers{getActiveAlertCount(alerts) > 0 && <span style={{ marginLeft: 4, background: C.red, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>{getActiveAlertCount(alerts)}</span>}
-                </button>
-                <button onClick={() => setView("settings")} style={tabStyle(view === "settings")}>Settings</button>
-              </div>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 16px" }}>
+          {/* Top row: logo + actions */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h1 style={{ fontFamily: fontSans, fontSize: 16, fontWeight: 700, margin: 0, color: C.text, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 18 }}>☕</span> Café Pilot
+              </h1>
               <SaveIndicator status={saveStatus} />
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8 }}>
               {view === "dashboard" ? (
                 <>
-                  <Btn variant="secondary" onClick={openSimConfig} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
-                  <Btn onClick={() => { setView("shifts"); handleNewShift(); }} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
+                  <Btn variant="secondary" onClick={openSimConfig} style={{ fontSize: 11, padding: "5px 12px" }}>Simulate</Btn>
+                  <Btn onClick={() => { setView("shifts"); handleNewShift(); }} style={{ fontSize: 11, padding: "5px 12px" }}>+ Log shift</Btn>
                 </>
               ) : view === "recipes" ? (
                 <>
-                  <Btn variant="secondary" onClick={() => { setIngredients(DEFAULT_INGREDIENTS); setRecipes(DEFAULT_RECIPES); }} style={{ color: "rgba(255,255,255,0.5)", borderColor: "rgba(255,255,255,0.15)", fontSize: 11 }}>↺ Reset</Btn>
-                  <Btn variant="secondary" onClick={() => setShowIngModal(true)} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 12 }}>📦 Ingredients ({ingredients.length})</Btn>
-                  <Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ New recipe</Btn>
+                  <Btn variant="secondary" onClick={() => { setIngredients(DEFAULT_INGREDIENTS); setRecipes(DEFAULT_RECIPES); }} style={{ fontSize: 11, padding: "5px 12px", color: C.textMuted }}>↺ Reset</Btn>
+                  <Btn variant="secondary" onClick={() => setShowIngModal(true)} style={{ fontSize: 11, padding: "5px 12px" }}>Ingredients ({ingredients.length})</Btn>
+                  <Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ fontSize: 11, padding: "5px 12px" }}>+ New recipe</Btn>
                 </>
               ) : view === "shifts" ? (
                 <>
-                  <Btn variant="secondary" onClick={openSimConfig} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>{"\uD83C\uDFB2"} Simulate 30 days</Btn>
-                  <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
+                  <Btn variant="secondary" onClick={openSimConfig} style={{ fontSize: 11, padding: "5px 12px" }}>Simulate</Btn>
+                  <Btn onClick={handleNewShift} style={{ fontSize: 11, padding: "5px 12px" }}>+ Log shift</Btn>
                 </>
               ) : view === "suppliers" ? (
                 <>
-                  {supplierView === "list" && <Btn variant="secondary" onClick={() => setSupplierView("drift")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>📊 Cost Drift</Btn>}
-                  {supplierView === "drift" && <Btn variant="secondary" onClick={() => setSupplierView("list")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Suppliers</Btn>}
-                  {supplierView === "detail" && <Btn variant="secondary" onClick={() => { setSupplierView("list"); setSelectedSupplierId(null); }} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Suppliers</Btn>}
+                  {supplierView === "list" && <Btn variant="secondary" onClick={() => setSupplierView("drift")} style={{ fontSize: 11, padding: "5px 12px" }}>Cost Drift</Btn>}
+                  {supplierView === "drift" && <Btn variant="secondary" onClick={() => setSupplierView("list")} style={{ fontSize: 11, padding: "5px 12px" }}>← Suppliers</Btn>}
+                  {supplierView === "detail" && <Btn variant="secondary" onClick={() => { setSupplierView("list"); setSelectedSupplierId(null); }} style={{ fontSize: 11, padding: "5px 12px" }}>← Suppliers</Btn>}
                 </>
               ) : null}
             </div>
+          </div>
+          {/* Tab row */}
+          <div style={{ display: "flex", gap: 2, overflowX: "auto", paddingTop: 8, paddingBottom: 0 }}>
+            <button onClick={() => setView("dashboard")} style={tabStyle(view === "dashboard")}>Dashboard</button>
+            <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
+            <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
+            <button onClick={() => setView("menu")} style={tabStyle(view === "menu")}>Menu</button>
+            <button onClick={() => setView("charges")} style={tabStyle(view === "charges")}>Charges</button>
+            <button onClick={() => { setView("suppliers"); setSupplierView("list"); }} style={tabStyle(view === "suppliers")}>
+              Suppliers{getActiveAlertCount(alerts) > 0 && <span style={{ marginLeft: 4, background: C.red, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>{getActiveAlertCount(alerts)}</span>}
+            </button>
+            <button onClick={() => setView("settings")} style={tabStyle(view === "settings")}>Settings</button>
           </div>
         </div>
       </div>
@@ -1393,7 +1400,7 @@ export default function App() {
               <Metric label="Recipes" value={stats.total} unit="" /><Metric label="Avg. margin" value={stats.avg.toFixed(1)} unit="%" /><Metric label="Alerts" value={stats.alerts} unit="" alert={stats.alerts > 0} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-              <div style={{ display: "flex", gap: 6 }}>{["All", ...CATEGORIES].map(c => <button key={c} onClick={() => setFilter(c)} style={{ padding: "6px 14px", borderRadius: 20, border: filter === c ? "none" : `1px solid ${C.border}`, background: filter === c ? C.green : "transparent", color: filter === c ? "#fff" : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{c}</button>)}</div>
+              <div style={{ display: "flex", gap: 6 }}>{["All", ...CATEGORIES].map(c => <button key={c} onClick={() => setFilter(c)} style={{ padding: "6px 14px", borderRadius: 20, border: filter === c ? "none" : `1px solid ${C.border}`, background: filter === c ? C.text : "transparent", color: filter === c ? "#fff" : C.textMuted, fontFamily: fontSans, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}>{c}</button>)}</div>
               <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "6px 12px", border: `1px solid ${C.border}`, borderRadius: 20, fontFamily: fontSans, fontSize: 12, background: C.card, outline: "none", width: 160 }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>{filtered.map(r => <RecipeCard key={r.id} recipe={r} ingredients={ingredients} onEdit={rec => setRecipeModal({ open: true, recipe: rec })} onDelete={id => setRecipes(prev => prev.filter(x => x.id !== id))} />)}</div>
