@@ -1138,7 +1138,7 @@ function SettingsPanel({ settings, onChange, allData, onImportData }) {
 }
 
 // ─── App ────────────────────────────────────────────────────────
-export default function App() {
+export default function App({ user, onLogout, cafeName }) {
   const [ingredients, setIngredients] = useState(DEFAULT_INGREDIENTS);
   const [recipes, setRecipes] = useState(DEFAULT_RECIPES);
   const [shifts, setShifts] = useState([]);
@@ -1340,18 +1340,19 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: fontSans, color: C.text }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <div style={{ background: C.card, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 16px" }}>
           {/* Top row: logo + actions */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <h1 style={{ fontFamily: fontSans, fontSize: 16, fontWeight: 700, margin: 0, color: C.text, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 18 }}>☕</span> Café Pilot
+                <span style={{ fontSize: 18 }}>☕</span> {cafeName || "Café Pilot"}
               </h1>
               <SaveIndicator status={saveStatus} />
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {user && <span style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted }}>{user.name}</span>}
+              {onLogout && <Btn variant="secondary" onClick={onLogout} style={{ fontSize: 10, padding: "4px 10px", color: C.textMuted }}>Logout</Btn>}
               {view === "dashboard" ? (
                 <>
                   <Btn variant="secondary" onClick={openSimConfig} style={{ fontSize: 11, padding: "5px 12px" }}>Simulate</Btn>
