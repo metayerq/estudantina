@@ -14,10 +14,11 @@ export default async function handler(req, res) {
   }
 
   // Determine base URL from key type
+  // Merchant API uses /api/orders (not /api/1.0/)
   const isSandbox = apiKey.startsWith("sk_test_") || apiKey.startsWith("sandbox_");
   const baseUrl = isSandbox
-    ? "https://sandbox-merchant.revolut.com/api/1.0"
-    : "https://merchant.revolut.com/api/1.0";
+    ? "https://sandbox-merchant.revolut.com"
+    : "https://merchant.revolut.com";
 
   try {
     const response = await fetch(`${baseUrl}${endpoint}`, {

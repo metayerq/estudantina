@@ -20,7 +20,7 @@ export const DEFAULT_POS_CONFIG = {
 
 /**
  * Test Revolut Merchant API connection.
- * Uses Vite proxy in dev (/api/revolut → merchant.revolut.com/api/1.0)
+ * Uses Vite proxy in dev (/api/revolut → merchant.revolut.com/api)
  * and Vercel serverless function in production (/api/revolut-proxy).
  */
 export async function testRevolutConnection(apiKey) {
@@ -35,6 +35,7 @@ export async function testRevolutConnection(apiKey) {
     let response;
 
     if (isDev) {
+      // Vite proxy rewrites /api/revolut → /api on merchant.revolut.com
       response = await fetch("/api/revolut/orders?limit=1", {
         method: "GET",
         headers: {
@@ -50,7 +51,7 @@ export async function testRevolutConnection(apiKey) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           apiKey: apiKey.trim(),
-          endpoint: "/orders?limit=1",
+          endpoint: "/api/orders?limit=1",
         }),
       });
     }
