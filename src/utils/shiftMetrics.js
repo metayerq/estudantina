@@ -17,6 +17,7 @@ export const getMargin = (sp, uc) => sp > 0 ? ((sp - uc) / sp) * 100 : 0;
 export const THRESHOLDS = {
   MIN_GROSS_MARGIN: 72,
   MIN_REV_PER_LABOR_HOUR: 35,
+  MAX_FOOD_COST_PCT: 35,
 };
 
 export function computeShiftMetrics(shift, recipes, ingredients) {

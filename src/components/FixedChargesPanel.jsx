@@ -6,8 +6,8 @@ const FIXED_COST_CATEGORIES = ["Rent", "Utilities", "Insurance", "Maintenance", 
 const FIXED_COST_FREQUENCIES = [{ value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" }, { value: "annual", label: "Annual" }];
 
 const CATEGORY_ICONS = {
-  Rent: "\uD83C\uDFE0", Utilities: "\u26A1", Insurance: "\uD83D\uDEE1\uFE0F",
-  Maintenance: "\uD83D\uDD27", Marketing: "\uD83D\uDCE3", Subscriptions: "\uD83D\uDCCB", Other: "\uD83D\uDCCC",
+  Rent: "🏠", Utilities: "⚡", Insurance: "🛡️",
+  Maintenance: "🔧", Marketing: "📣", Subscriptions: "📋", Other: "📌",
 };
 
 const card = { background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 };
@@ -32,7 +32,7 @@ function FixedCostForm({ cost, onSave, onCancel }) {
       </label>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
         <label>
-          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>{"Amount (\u20AC)"}</span>
+          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>{"Amount (€)"}</span>
           <input type="number" step="0.01" min="0" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} style={inputStyle} />
         </label>
         <label>
@@ -77,7 +77,6 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
       if (!groups[item.category]) groups[item.category] = [];
       groups[item.category].push(item);
     }
-    // Sort categories by total monthly descending
     return Object.entries(groups)
       .map(([cat, items]) => {
         const monthlySum = items.filter(i => i.active).reduce((s, i) => s + toMonthly(i), 0);
@@ -108,12 +107,12 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
       <div style={card}>
         <div style={sectionTitle}>Overview</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-          <Metric label="Monthly total" value={`\u20AC${fixedCostData.monthlyTotal.toFixed(0)}`} unit="" />
-          <Metric label="Annual total" value={`\u20AC${annualTotal.toFixed(0)}`} unit="" />
-          <Metric label="Daily allocation" value={`\u20AC${fixedCostData.dailyCost.toFixed(0)}`} unit="/day" />
+          <Metric label="Monthly total" value={`€${fixedCostData.monthlyTotal.toFixed(0)}`} unit="" />
+          <Metric label="Annual total" value={`€${annualTotal.toFixed(0)}`} unit="" />
+          <Metric label="Daily allocation" value={`€${fixedCostData.dailyCost.toFixed(0)}`} unit="/day" />
           {breakEvenData && (
             <>
-              <Metric label="Break-even" value={`\u20AC${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" />
+              <Metric label="Break-even" value={`€${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" />
               <Metric label="Avg gross margin" value={breakEvenData.avgGrossMarginPct.toFixed(1)} unit="%" />
             </>
           )}
@@ -123,7 +122,7 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
       {/* Category Groups */}
       <div style={card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={sectionTitle}>{"By Category"}</div>
+          <div style={sectionTitle}>By Category</div>
           <Btn variant="secondary" onClick={() => setEditingFC(blankFC())} style={{ fontSize: 12 }}>+ Add fixed cost</Btn>
         </div>
 
@@ -138,10 +137,10 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
             {/* Category header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: C.cream, borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 8 }}>
               <span style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>
-                {CATEGORY_ICONS[category] || "\uD83D\uDCCC"} {category}
+                {CATEGORY_ICONS[category] || "📌"} {category}
               </span>
               <span style={{ fontFamily: fontMono, fontSize: 13, fontWeight: 600, color: C.green }}>
-                {`\u20AC${monthlySum.toFixed(0)}/mo`}
+                {`€${monthlySum.toFixed(0)}/mo`}
               </span>
             </div>
             {/* Items */}
@@ -150,14 +149,14 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>{item.name}</div>
                   <div style={{ fontFamily: fontMono, fontSize: 11, color: C.textMuted }}>
-                    {`\u20AC${item.amount.toFixed(2)} / ${item.frequency}`}
-                    {item.notes ? ` \u2014 ${item.notes}` : ""}
+                    {`€${item.amount.toFixed(2)} / ${item.frequency}`}
+                    {item.notes ? ` — ${item.notes}` : ""}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={() => toggleActiveFC(item.id)} style={smallBtnStyle}>{item.active ? "Disable" : "Enable"}</button>
                   <button onClick={() => setEditingFC(item)} style={smallBtnStyle}>Edit</button>
-                  <button onClick={() => deleteFC(item.id)} style={{ ...smallBtnStyle, color: C.red }}>{"\u00D7"}</button>
+                  <button onClick={() => deleteFC(item.id)} style={{ ...smallBtnStyle, color: C.red }}>×</button>
                 </div>
               </div>
             ))}
@@ -171,12 +170,12 @@ export default function FixedChargesPanel({ fixedCosts, onChangeFixedCosts, shif
           <div style={sectionTitle}>Break-even Impact</div>
           <div style={{ background: C.cream, borderRadius: 8, padding: 16, border: `1px solid ${C.border}` }}>
             <div style={{ fontFamily: fontSans, fontSize: 13, marginBottom: 12 }}>
-              To cover all costs (labor + fixed), you need at least <span style={{ fontFamily: fontMono, fontWeight: 700, color: C.amber }}>{`\u20AC${breakEvenData.breakEvenRevenue.toFixed(0)}`}</span> in daily revenue.
+              To cover all costs (labor + fixed), you need at least <span style={{ fontFamily: fontMono, fontWeight: 700, color: C.amber }}>€{breakEvenData.breakEvenRevenue.toFixed(0)}</span> in daily revenue.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
-              <Metric label="Break-even revenue" value={`\u20AC${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" size="small" />
-              <Metric label="Avg daily labor" value={`\u20AC${breakEvenData.avgDailyLabor.toFixed(0)}`} unit="/day" size="small" />
-              <Metric label="Daily fixed costs" value={`\u20AC${breakEvenData.dailyFixedCost.toFixed(0)}`} unit="/day" size="small" />
+              <Metric label="Break-even revenue" value={`€${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" size="small" />
+              <Metric label="Avg daily labor" value={`€${breakEvenData.avgDailyLabor.toFixed(0)}`} unit="/day" size="small" />
+              <Metric label="Daily fixed costs" value={`€${breakEvenData.dailyFixedCost.toFixed(0)}`} unit="/day" size="small" />
               <Metric label="Gross margin" value={breakEvenData.avgGrossMarginPct.toFixed(1)} unit="%" size="small" />
             </div>
           </div>

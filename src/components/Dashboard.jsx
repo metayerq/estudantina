@@ -21,7 +21,7 @@ const PERIOD_OPTIONS = [
 ];
 
 const PERIOD_LABELS = { morning: "Morning", afternoon: "Afternoon", full_day: "Full Day" };
-const PERIOD_ICONS = { morning: "\uD83C\uDF05", afternoon: "\u2600\uFE0F", full_day: "\uD83D\uDCCB" };
+const PERIOD_ICONS = { morning: "🌅", afternoon: "☀️", full_day: "📋" };
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + "T12:00:00");
@@ -67,7 +67,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
   if (shifts.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>{"\u2615"}</div>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>☕</div>
         <h2 style={{ fontFamily: font, fontSize: 24, fontWeight: 400, marginBottom: 8 }}>Welcome to Estudantina</h2>
         <p style={{ fontFamily: fontSans, fontSize: 14, color: C.textMuted, marginBottom: 24, maxWidth: 400, margin: "0 auto 24px" }}>
           Log your first shift or simulate 30 days of data to see business insights here.
@@ -115,11 +115,11 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, ...card }}>
         <Metric label="Recipes" value={quickStats.totalRecipes} unit="" />
         <Metric label="Avg. margin" value={quickStats.avgMargin.toFixed(1)} unit="%" />
-        <Metric label="Food cost" value={foodCostPct.toFixed(1)} unit="%" alert={foodCostPct > 35} />
+        <Metric label="Food cost" value={foodCostPct.toFixed(1)} unit="%" alert={foodCostPct > THRESHOLDS.MAX_FOOD_COST_PCT} />
         <Metric label="Alerts" value={quickStats.activeAlerts} unit="" alert={quickStats.activeAlerts > 0} />
-        <Metric label={"CA annuel est."} value={`\u20AC${(periodPL.annualizedRevenue / 1000).toFixed(0)}k`} unit="" />
+        <Metric label="CA annuel est." value={`€${(periodPL.annualizedRevenue / 1000).toFixed(0)}k`} unit="" />
         {hasFixedCosts && breakEvenData && (
-          <Metric label="Break-even" value={`\u20AC${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" />
+          <Metric label="Break-even" value={`€${breakEvenData.breakEvenRevenue.toFixed(0)}`} unit="/day" />
         )}
       </div>
 
@@ -130,37 +130,38 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
           hasFixedCosts ? (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12, marginBottom: 16 }}>
-                <Metric label="Revenue" value={`\u20AC${todaySnap.revenue.toFixed(0)}`} unit="" />
-                <Metric label="COGS" value={`\u20AC${todaySnap.cogs.toFixed(0)}`} unit="" />
-                <Metric label="Gross profit" value={`\u20AC${todaySnap.grossProfit.toFixed(0)}`} unit="" />
-                <Metric label="Labor" value={`\u20AC${todaySnap.laborCost.toFixed(0)}`} unit="" />
-                <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > 35} />
+                <Metric label="Revenue" value={`€${todaySnap.revenue.toFixed(0)}`} unit="" />
+                <Metric label="COGS" value={`€${todaySnap.cogs.toFixed(0)}`} unit="" />
+                <Metric label="Gross profit" value={`€${todaySnap.grossProfit.toFixed(0)}`} unit="" />
+                <Metric label="Labor" value={`€${todaySnap.laborCost.toFixed(0)}`} unit="" />
+                <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > THRESHOLDS.MAX_FOOD_COST_PCT} />
               </div>
               <div style={{ background: C.cream, borderRadius: 8, padding: 16, border: `1px solid ${C.border}` }}>
                 <div style={{ fontFamily: fontSans, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted, marginBottom: 10 }}>{"P&L Breakdown"}</div>
                 <PLWaterfall rows={(() => {
-                  const op = todaySnap.netProfit;
-                  const df = fixedCostData.dailyCost;
-                  const np = op - df;
+                  // todaySnap.netProfit = gross_profit - labor_cost (operating profit, no fixed costs)
+                  const operatingProfit = todaySnap.netProfit;
+                  const dailyFixed = fixedCostData.dailyCost;
+                  const trueNetProfit = operatingProfit - dailyFixed;
                   return [
                     { label: "Revenue", value: todaySnap.revenue },
                     { label: "COGS", value: -todaySnap.cogs },
                     { label: "Gross Profit", value: todaySnap.grossProfit, line: true },
                     { label: "Labor", value: -todaySnap.laborCost },
-                    { label: "Operating Profit", value: op, line: true },
-                    { label: "Fixed Costs", value: -df },
-                    { label: "Net Profit", value: np, bold: true, line: true, final: true },
+                    { label: "Operating Profit", value: operatingProfit, line: true },
+                    { label: "Fixed Costs", value: -dailyFixed },
+                    { label: "Net Profit", value: trueNetProfit, bold: true, line: true, final: true },
                   ];
                 })()} maxWidth={500} />
               </div>
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
-              <Metric label="Revenue" value={`\u20AC${todaySnap.revenue.toFixed(0)}`} unit="" />
-              <Metric label="COGS" value={`\u20AC${todaySnap.cogs.toFixed(0)}`} unit="" />
-              <Metric label="Gross profit" value={`\u20AC${todaySnap.grossProfit.toFixed(0)}`} unit="" />
-              <Metric label="Net profit" value={`\u20AC${todaySnap.netProfit.toFixed(0)}`} unit="" alert={todaySnap.netProfit < 0} />
-              <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > 35} />
+              <Metric label="Revenue" value={`€${todaySnap.revenue.toFixed(0)}`} unit="" />
+              <Metric label="COGS" value={`€${todaySnap.cogs.toFixed(0)}`} unit="" />
+              <Metric label="Gross profit" value={`€${todaySnap.grossProfit.toFixed(0)}`} unit="" />
+              <Metric label="Net profit" value={`€${todaySnap.netProfit.toFixed(0)}`} unit="" alert={todaySnap.netProfit < 0} />
+              <Metric label="Food cost" value={todaySnap.foodCostPct.toFixed(1)} unit="%" alert={todaySnap.foodCostPct > THRESHOLDS.MAX_FOOD_COST_PCT} />
             </div>
           )
         ) : (
@@ -174,18 +175,18 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
       {/* Period P&L Summary */}
       {periodPL.shiftCount > 0 && (
         <div style={card}>
-          <div style={sectionTitle}>{`P&L Summary \u2014 Last ${periodLabel(period)}`}</div>
+          <div style={sectionTitle}>{`P&L Summary — Last ${periodLabel(period)}`}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
             <div style={{ background: C.cream, borderRadius: 8, padding: 20, border: `1px solid ${C.border}` }}>
               <PLWaterfall rows={plRows} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignContent: "start" }}>
               <Metric label="Shifts" value={periodPL.shiftCount} unit="" size="small" />
-              <Metric label="Avg daily rev." value={`\u20AC${periodPL.avgDailyRevenue.toFixed(0)}`} unit="" size="small" />
+              <Metric label="Avg daily rev." value={`€${periodPL.avgDailyRevenue.toFixed(0)}`} unit="" size="small" />
               <Metric label="Gross margin" value={periodPL.grossMarginPct.toFixed(1)} unit="%" size="small" alert={periodPL.grossMarginPct < THRESHOLDS.MIN_GROSS_MARGIN} />
               <Metric label="Net margin" value={periodPL.netMarginPct.toFixed(1)} unit="%" size="small" alert={periodPL.netMarginPct < 0} />
-              <Metric label={"CA annuel est."} value={`\u20AC${(periodPL.annualizedRevenue / 1000).toFixed(0)}k`} unit="" size="small" />
-              {hasFixedCosts && <Metric label="Daily overhead" value={`\u20AC${fixedCostData.dailyCost.toFixed(0)}`} unit="" size="small" />}
+              <Metric label="CA annuel est." value={`€${(periodPL.annualizedRevenue / 1000).toFixed(0)}k`} unit="" size="small" />
+              {hasFixedCosts && <Metric label="Daily overhead" value={`€${fixedCostData.dailyCost.toFixed(0)}`} unit="" size="small" />}
             </div>
           </div>
           {/* Break-even metrics */}
@@ -193,7 +194,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
             <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: "flex", gap: 24 }}>
               <div>
                 <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 2 }}>Daily break-even</div>
-                <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600, color: C.amber }}>{`\u20AC${breakEvenData.breakEvenRevenue.toFixed(0)}/day`}</div>
+                <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600, color: C.amber }}>{`€${breakEvenData.breakEvenRevenue.toFixed(0)}/day`}</div>
               </div>
               <div>
                 <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 2 }}>Avg gross margin</div>
@@ -201,7 +202,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
               </div>
               <div>
                 <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 2 }}>Daily overhead</div>
-                <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600 }}>{`\u20AC${fixedCostData.dailyCost.toFixed(0)}`}</div>
+                <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 600 }}>{`€${fixedCostData.dailyCost.toFixed(0)}`}</div>
               </div>
             </div>
           )}
@@ -211,7 +212,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
       {/* Detailed P&L Breakdown */}
       {plBreakdown.length > 1 && (
         <div style={card}>
-          <div style={sectionTitle}>{`Detailed P&L \u2014 Last ${periodLabel(period)}`}</div>
+          <div style={sectionTitle}>{`Detailed P&L — Last ${periodLabel(period)}`}</div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: fontSans, fontSize: 12 }}>
               <thead>
@@ -230,18 +231,18 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
                 {plBreakdown.map((row, i) => {
                   const net = hasFixedCosts ? row.netProfit : row.operatingProfit;
                   return (
-                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <tr key={row.label} style={{ borderBottom: `1px solid ${C.border}` }}>
                       <td style={{ padding: "8px 6px", fontWeight: 600 }}>{row.label}</td>
-                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono }}>{`\u20AC${row.totalRevenue.toFixed(0)}`}</td>
-                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: C.red }}>{`-\u20AC${row.totalCogs.toFixed(0)}`}</td>
-                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono }}>{`\u20AC${row.totalGross.toFixed(0)}`}</td>
-                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: C.red }}>{`-\u20AC${row.totalLabor.toFixed(0)}`}</td>
-                      {hasFixedCosts && <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: C.red }}>{`-\u20AC${row.fixedCostAllocation.toFixed(0)}`}</td>}
+                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono }}>{`€${row.totalRevenue.toFixed(0)}`}</td>
+                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: C.red }}>{`-€${row.totalCogs.toFixed(0)}`}</td>
+                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono }}>{`€${row.totalGross.toFixed(0)}`}</td>
+                      <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: C.red }}>{`-€${row.totalLabor.toFixed(0)}`}</td>
+                      {hasFixedCosts && <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: C.red }}>{`-€${row.fixedCostAllocation.toFixed(0)}`}</td>}
                       <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, fontWeight: 600, color: net >= 0 ? C.green : C.red }}>
-                        {net < 0 ? `-\u20AC${Math.abs(net).toFixed(0)}` : `\u20AC${net.toFixed(0)}`}
+                        {net < 0 ? `-€${Math.abs(net).toFixed(0)}` : `€${net.toFixed(0)}`}
                       </td>
                       <td style={{ textAlign: "right", padding: "8px 6px", fontFamily: fontMono, color: row.grossMarginPct < THRESHOLDS.MIN_GROSS_MARGIN ? C.red : C.text }}>
-                        {row.totalRevenue > 0 ? `${row.grossMarginPct.toFixed(1)}%` : "\u2014"}
+                        {row.totalRevenue > 0 ? `${row.grossMarginPct.toFixed(1)}%` : "—"}
                       </td>
                     </tr>
                   );
@@ -254,21 +255,21 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
 
       {/* Revenue Chart */}
       <div style={card}>
-        <div style={sectionTitle}>{`Daily revenue \u2014 Last ${periodLabel(period)}`}</div>
+        <div style={sectionTitle}>{`Daily revenue — Last ${periodLabel(period)}`}</div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={dailyRevenue} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
             <XAxis dataKey={period <= 30 ? "dayName" : "date"} tick={{ fontFamily: fontMono, fontSize: period <= 30 ? 11 : 9 }} tickFormatter={period > 30 ? d => d.slice(8) : undefined} interval={period > 30 ? Math.floor(period / 15) : 0} />
-            <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} tickFormatter={v => `\u20AC${v}`} />
-            <Tooltip {...ttStyle} labelFormatter={period > 7 ? d => formatDate(d) : undefined} formatter={(v, name) => [`\u20AC${Number(v).toFixed(2)}`, name === "revenue" ? "Revenue" : name === "netProfit" ? "Net Profit" : name]} />
+            <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} tickFormatter={v => `€${v}`} />
+            <Tooltip {...ttStyle} labelFormatter={period > 7 ? d => formatDate(d) : undefined} formatter={(v, name) => [`€${Number(v).toFixed(2)}`, name === "revenue" ? "Revenue" : name === "netProfit" ? "Net Profit" : name]} />
             {hasFixedCosts && breakEvenData && (
-              <ReferenceLine y={breakEvenData.breakEvenRevenue} stroke={C.amber} strokeDasharray="5 5" label={{ value: `BE \u20AC${breakEvenData.breakEvenRevenue.toFixed(0)}`, position: "insideTopRight", fontFamily: fontMono, fontSize: 10, fill: C.amber }} />
+              <ReferenceLine y={breakEvenData.breakEvenRevenue} stroke={C.amber} strokeDasharray="5 5" label={{ value: `BE €${breakEvenData.breakEvenRevenue.toFixed(0)}`, position: "insideTopRight", fontFamily: fontMono, fontSize: 10, fill: C.amber }} />
             )}
             <Bar dataKey="revenue" radius={[3, 3, 0, 0]}>
               {dailyRevenue.map((entry, i) => {
                 const dayProfit = hasFixedCosts ? entry.netProfit - fixedCostData.dailyCost : entry.netProfit;
                 return (
-                  <Cell key={i} fill={dayProfit >= 0 ? C.green : C.red} opacity={entry.revenue === 0 ? 0.1 : 0.8} />
+                  <Cell key={entry.date} fill={dayProfit >= 0 ? C.green : C.red} opacity={entry.revenue === 0 ? 0.1 : 0.8} />
                 );
               })}
             </Bar>
@@ -279,7 +280,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
       {/* Margin Trend */}
       {marginTrend.length > 1 && (
         <div style={card}>
-          <div style={sectionTitle}>{`Gross margin trend \u2014 Last ${periodLabel(period)}`}</div>
+          <div style={sectionTitle}>{`Gross margin trend — Last ${periodLabel(period)}`}</div>
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={marginTrend} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -293,7 +294,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
         </div>
       )}
 
-      {/* Period Comparison (from ShiftAnalytics) */}
+      {/* Period Comparison */}
       <div style={card}>
         <div style={sectionTitle}>Performance by period</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
@@ -306,10 +307,10 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
                 </div>
                 <div style={{ fontFamily: fontMono, fontSize: 11, color: C.textMuted, marginBottom: 8 }}>{d.count} shifts</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <Metric label="Avg revenue" value={`\u20AC${d.avgRevenue.toFixed(0)}`} unit="" size="small" />
+                  <Metric label="Avg revenue" value={`€${d.avgRevenue.toFixed(0)}`} unit="" size="small" />
                   <Metric label="Avg margin" value={d.avgMargin.toFixed(1)} unit="%" size="small" alert={d.avgMargin < THRESHOLDS.MIN_GROSS_MARGIN} />
-                  <Metric label="Avg net profit" value={`\u20AC${d.avgNetProfit.toFixed(0)}`} unit="" size="small" alert={d.avgNetProfit < 0} />
-                  <Metric label="Rev/labor hr" value={`\u20AC${d.avgRevPerHr.toFixed(0)}`} unit="" size="small" alert={d.avgRevPerHr < THRESHOLDS.MIN_REV_PER_LABOR_HOUR} />
+                  <Metric label="Avg net profit" value={`€${d.avgNetProfit.toFixed(0)}`} unit="" size="small" alert={d.avgNetProfit < 0} />
+                  <Metric label="Rev/labor hr" value={`€${d.avgRevPerHr.toFixed(0)}`} unit="" size="small" alert={d.avgRevPerHr < THRESHOLDS.MIN_REV_PER_LABOR_HOUR} />
                 </div>
               </div>
             );
@@ -320,7 +321,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
       {/* Two-column: Top Sellers + Day of Week */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div style={card}>
-          <div style={sectionTitle}>{`Top sellers \u2014 Last ${periodLabel(period)}`}</div>
+          <div style={sectionTitle}>{`Top sellers — Last ${periodLabel(period)}`}</div>
           {topSellers.length === 0 ? (
             <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted }}>No sales data for this period</div>
           ) : (
@@ -332,9 +333,9 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
                     <div style={{ fontFamily: fontMono, fontSize: 16, fontWeight: 700, color: C.textMuted, width: 24, textAlign: "center" }}>{i + 1}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>{item.name}</div>
-                      <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted }}>{item.totalQty} units{" \u00B7 "}<span style={{ color: cc.color }}>{item.category}</span></div>
+                      <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted }}>{item.totalQty} units · <span style={{ color: cc.color }}>{item.category}</span></div>
                     </div>
-                    <div style={{ fontFamily: fontMono, fontSize: 14, fontWeight: 600 }}>{`\u20AC${item.totalRevenue.toFixed(0)}`}</div>
+                    <div style={{ fontFamily: fontMono, fontSize: 14, fontWeight: 600 }}>{`€${item.totalRevenue.toFixed(0)}`}</div>
                   </div>
                 );
               })}
@@ -348,11 +349,11 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
             <BarChart data={weekdayData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
               <XAxis dataKey="day" tick={{ fontFamily: fontMono, fontSize: 11 }} />
-              <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} tickFormatter={v => `\u20AC${v}`} />
-              <Tooltip {...ttStyle} formatter={(v, name) => [`\u20AC${Number(v).toFixed(0)}`, name === "avgRevenue" ? "Avg Revenue" : "Avg Net Profit"]} />
+              <YAxis tick={{ fontFamily: fontMono, fontSize: 10 }} tickFormatter={v => `€${v}`} />
+              <Tooltip {...ttStyle} formatter={(v, name) => [`€${Number(v).toFixed(0)}`, name === "avgRevenue" ? "Avg Revenue" : "Avg Net Profit"]} />
               <Bar dataKey="avgRevenue" fill={C.green} radius={[4, 4, 0, 0]} opacity={0.85}>
-                {weekdayData.map((entry, i) => (
-                  <Cell key={i} fill={entry.avgNetProfit >= 0 ? C.green : C.red} opacity={entry.shiftCount === 0 ? 0.15 : 0.85} />
+                {weekdayData.map((entry) => (
+                  <Cell key={entry.day} fill={entry.avgNetProfit >= 0 ? C.green : C.red} opacity={entry.shiftCount === 0 ? 0.15 : 0.85} />
                 ))}
               </Bar>
             </BarChart>
@@ -360,7 +361,7 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
         </div>
       </div>
 
-      {/* Best / Worst Shifts (from ShiftAnalytics) */}
+      {/* Best / Worst Shifts */}
       {bestWorst && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
           {[
@@ -371,11 +372,11 @@ export default function Dashboard({ shifts, recipes, ingredients, alerts, fixedC
               <div style={{ ...sectionTitle, color }}>{label}</div>
               <div style={{ fontFamily: font, fontSize: 16, marginBottom: 8 }}>{formatDate(data.shift.date)}</div>
               <div style={{ fontFamily: fontSans, fontSize: 11, color: C.textMuted, marginBottom: 12 }}>
-                {data.shift.period.replace("_", " ")} {"\u00B7"} {data.shift.staff_count} staff {"\u00B7"} {data.shift.hours_worked}h
+                {data.shift.period.replace("_", " ")} · {data.shift.staff_count} staff · {data.shift.hours_worked}h
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                <Metric label="Revenue" value={`\u20AC${data.metrics.revenue.toFixed(0)}`} unit="" size="small" />
-                <Metric label="Net profit" value={`\u20AC${data.metrics.net_profit.toFixed(0)}`} unit="" size="small" alert={data.metrics.net_profit < 0} />
+                <Metric label="Revenue" value={`€${data.metrics.revenue.toFixed(0)}`} unit="" size="small" />
+                <Metric label="Net profit" value={`€${data.metrics.net_profit.toFixed(0)}`} unit="" size="small" alert={data.metrics.net_profit < 0} />
                 <Metric label="Margin" value={data.metrics.gross_margin_pct.toFixed(1)} unit="%" size="small" />
               </div>
             </div>

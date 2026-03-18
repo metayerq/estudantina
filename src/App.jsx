@@ -7,7 +7,7 @@ import { stampShiftSnapshots } from "./services/snapshotService.js";
 import { addPriceEntry, getCurrentPrice } from "./services/priceHistoryService.js";
 import { loadData, migrateToV6, ensureSuppliers, ensurePriceHistory, CURRENT_SK, DEFAULT_SETTINGS } from "./services/migrationService.js";
 import { generateAlerts, mergeAlerts, dismissAlert as dismissAlertFn, getActiveAlertCount } from "./services/alertService.js";
-import { getSupplierIngredients, getSupplierLastUpdate, SUPPLIER_CATEGORIES } from "./services/supplierService.js";
+import { getSupplierIngredients, getSupplierLastUpdate } from "./services/supplierService.js";
 import { computeCostDrift, computeDriftSummary, getIngredientTimeline, computeMarginErosion } from "./services/costDriftService.js";
 import { filterShiftsByDays } from "./services/analyticsService.js";
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LineChart, Line } from "recharts";
@@ -946,7 +946,14 @@ function AlertBanner({ alerts, onDismiss, onNavigate }) {
   );
 }
 
-// ─── Simulator Config ────────────────────────────────────────────
+// ─── Simulator Constants & Config ────────────────────────────────
+const SIM_REVENUE_VARIANCE = 0.15;        // ±15% daily revenue variance
+const SIM_TYPICAL_PERIOD_PCT = 0.85;      // 85% chance of typical period
+const SIM_RECIPE_AVAILABILITY = 0.15;     // 15% chance a recipe is unavailable
+const SIM_CATEGORY_CAPS = { Coffee: 40, Pastry: 15, Kombucha: 8 };
+const SIM_CATEGORY_WEIGHTS = { Coffee: 3, Pastry: 1.5, Kombucha: 0.5 };
+const SIM_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon → Sun
+
 const DEFAULT_SIM_CONFIG = {
   targetDailyRevenue: 350,
   openDaysPerWeek: 6,
@@ -1181,6 +1188,7 @@ export default function App() {
           if (d.settings) setSettings(d.settings);
           if (d.alerts?.length) setAlerts(d.alerts);
           if (d.fixed_costs?.length) setFixedCosts(d.fixed_costs);
+          if (d.dashboard_period) setDashboardPeriod(d.dashboard_period);
         } else {
           // Fresh install — no saved data, seed price history + extract suppliers from defaults
           const seededIngs = ensurePriceHistory(DEFAULT_INGREDIENTS);
@@ -1198,13 +1206,13 @@ export default function App() {
   const persist = useCallback(async () => {
     setSaveStatus("saving");
     try {
-      await store.set(CURRENT_SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }));
+      await store.set(CURRENT_SK, JSON.stringify({ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts, dashboard_period: dashboardPeriod }));
       setSaveStatus("saved");
     } catch { setSaveStatus("error"); }
     clearTimeout(stRef.current); stRef.current = setTimeout(() => setSaveStatus(null), 2000);
-  }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, fixedCosts]);
+  }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, fixedCosts, dashboardPeriod]);
 
-  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, fixedCosts, loaded, persist]);
+  useEffect(() => { if (!loaded) return; const t = setTimeout(() => persist(), 500); return () => clearTimeout(t); }, [ingredients, recipes, shifts, shiftTemplates, suppliers, settings, alerts, fixedCosts, dashboardPeriod, loaded, persist]);
 
   // Regenerate alerts when ingredients/recipes/settings change
   useEffect(() => {
@@ -1266,9 +1274,7 @@ export default function App() {
             staffWeekend, hourlyRate, typicalPeriod, weekendBoost } = config;
     const periods = ["morning", "afternoon", "full_day"];
     // Closed days: Mon=1 first, then Tue=2, etc.
-    const dayOrder = [1, 2, 3, 4, 5, 6, 0]; // Mon → Sun
-    const closedDays = dayOrder.slice(0, 7 - openDaysPerWeek);
-    const catCap = { Coffee: 40, Pastry: 15, Kombucha: 8 };
+    const closedDays = SIM_DAY_ORDER.slice(0, 7 - openDaysPerWeek);
 
     const today = new Date();
     const newShifts = [];
@@ -1279,21 +1285,18 @@ export default function App() {
       if (closedDays.includes(dayOfWeek)) continue;
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-      // Daily target with ±15% variance
-      const variance = 1 + (Math.random() * 2 - 1) * 0.15;
+      const variance = 1 + (Math.random() * 2 - 1) * SIM_REVENUE_VARIANCE;
       const dayTarget = targetDailyRevenue * (isWeekend ? weekendBoost : 1.0) * variance;
 
-      // Period: typical 85%, random 15%
-      const period = Math.random() > 0.85 ? periods[Math.floor(Math.random() * 3)] : typicalPeriod;
+      const period = Math.random() > SIM_TYPICAL_PERIOD_PCT ? periods[Math.floor(Math.random() * 3)] : typicalPeriod;
       const isFullDay = period === "full_day";
       const staffCount = isWeekend ? staffWeekend : staffWeekday;
       const hoursWorked = isFullDay ? (7 + Math.random() * 3) : (3 + Math.random() * 3);
 
-      // Revenue-targeted sales generation
-      const available = recipes.filter(() => Math.random() > 0.15);
+      const available = recipes.filter(() => Math.random() > SIM_RECIPE_AVAILABILITY);
       if (available.length === 0) continue;
       const weights = available.map(r => {
-        const catW = r.category === "Coffee" ? 3 : r.category === "Pastry" ? 1.5 : 0.5;
+        const catW = SIM_CATEGORY_WEIGHTS[r.category] || 0.5;
         return catW * (0.5 + Math.random());
       });
       const totalW = weights.reduce((a, b) => a + b, 0);
@@ -1301,7 +1304,7 @@ export default function App() {
       for (let j = 0; j < available.length; j++) {
         const r = available[j];
         const share = (weights[j] / totalW) * dayTarget;
-        const cap = catCap[r.category] || 10;
+        const cap = SIM_CATEGORY_CAPS[r.category] || 10;
         const qty = Math.min(Math.round(share / r.sellingPrice), cap);
         if (qty > 0) sales.push({ recipe_id: r.id, quantity: qty });
       }

@@ -22,8 +22,10 @@ export function computeMenuPerformance(recipes, ingredients, shifts) {
     const data = agg[recipe.id];
     if (!data || data.totalQty === 0) continue;
     const unitCost = calcUnitCost(recipe, ingredients);
-    const avgMargin = recipe.sellingPrice > 0
-      ? ((recipe.sellingPrice - unitCost) / recipe.sellingPrice) * 100
+    // Use actual avg selling price from sales (respects snapshot prices)
+    const avgSellingPrice = data.totalQty > 0 ? data.totalRevenue / data.totalQty : recipe.sellingPrice;
+    const avgMargin = avgSellingPrice > 0
+      ? ((avgSellingPrice - unitCost) / avgSellingPrice) * 100
       : 0;
     entries.push({ recipe, totalQty: data.totalQty, totalRevenue: data.totalRevenue, avgMargin, unitCost, quadrant: null });
   }
@@ -92,9 +94,11 @@ export function computeBreakEven(shiftData, recipes, ingredients) {
   for (const sale of (shiftData.sales || [])) {
     const recipe = recipes.find(r => r.id === sale.recipe_id);
     if (!recipe) continue;
-    const unitCost = calcUnitCost(recipe, ingredients);
-    revenue += recipe.sellingPrice * sale.quantity;
-    totalCOGS += unitCost * sale.quantity;
+    // Use snapshot when available for historical accuracy
+    const sp = sale.snapshot ? sale.snapshot.selling_price : recipe.sellingPrice;
+    const uc = sale.snapshot ? sale.snapshot.cost_per_unit : calcUnitCost(recipe, ingredients);
+    revenue += sp * sale.quantity;
+    totalCOGS += uc * sale.quantity;
   }
   const grossProfit = revenue - totalCOGS;
   const laborCost = (shiftData.staff_count || 0) * (shiftData.hours_worked || 0) * (shiftData.hourly_rate || 0);
