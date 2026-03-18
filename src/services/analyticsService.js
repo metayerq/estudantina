@@ -351,3 +351,121 @@ export function computeBreakEvenRevenue(shifts, recipes, ingredients, fixedCosts
 
   return { breakEvenRevenue, avgGrossMarginPct, dailyFixedCost: dailyCost, avgDailyLabor };
 }
+
+// ─── Period P&L Summary ──────────────────────────────────────
+
+/**
+ * Full P&L aggregation for the last N days.
+ * Returns { totalRevenue, totalCogs, totalGross, totalLabor, operatingProfit,
+ *           fixedCostAllocation, netProfit, dayCount, shiftCount,
+ *           annualizedRevenue, avgDailyRevenue, grossMarginPct, netMarginPct }
+ */
+export function getPeriodPL(shifts, recipes, ingredients, fixedCosts, days) {
+  const filtered = filterShiftsByDays(shifts, days);
+  let totalRevenue = 0, totalCogs = 0, totalGross = 0, totalLabor = 0;
+  for (const shift of filtered) {
+    const m = computeShiftMetrics(shift, recipes, ingredients);
+    totalRevenue += m.revenue;
+    totalCogs += m.totalCOGS;
+    totalGross += m.gross_profit;
+    totalLabor += m.labor_cost;
+  }
+  const operatingProfit = totalGross - totalLabor;
+  const { dailyCost } = computeDailyFixedCost(fixedCosts || []);
+  const fixedCostAllocation = dailyCost * days;
+  const netProfit = operatingProfit - fixedCostAllocation;
+  const grossMarginPct = totalRevenue > 0 ? (totalGross / totalRevenue) * 100 : 0;
+  const netMarginPct = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+  const avgDailyRevenue = totalRevenue / days;
+  const annualizedRevenue = avgDailyRevenue * 365;
+
+  return {
+    totalRevenue, totalCogs, totalGross, totalLabor, operatingProfit,
+    fixedCostAllocation, netProfit, dayCount: days, shiftCount: filtered.length,
+    annualizedRevenue, avgDailyRevenue, grossMarginPct, netMarginPct,
+  };
+}
+
+// ─── Detailed P&L Breakdown ─────────────────────────────────
+
+/**
+ * Break a period into sub-buckets with P&L for each.
+ * 7d → daily, 30d → weekly, 90d/180d/365d → monthly.
+ * Returns [{ label, ...plData }]
+ */
+export function getDetailedPLBreakdown(shifts, recipes, ingredients, fixedCosts, days) {
+  const today = new Date();
+  const buckets = [];
+
+  if (days <= 7) {
+    // Daily buckets
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const ds = toDateStr(d);
+      const label = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
+      const dayShifts = shifts.filter(s => s.date === ds);
+      buckets.push({ label, shifts: dayShifts, bucketDays: 1 });
+    }
+  } else if (days <= 30) {
+    // Weekly buckets
+    const numWeeks = Math.ceil(days / 7);
+    for (let w = numWeeks - 1; w >= 0; w--) {
+      const endD = new Date(today);
+      endD.setDate(endD.getDate() - w * 7);
+      const startD = new Date(endD);
+      startD.setDate(startD.getDate() - 6);
+      // Clamp start to the period boundary
+      const periodStart = new Date(today);
+      periodStart.setDate(periodStart.getDate() - days);
+      const clampedStart = startD < periodStart ? periodStart : startD;
+      const fromStr = toDateStr(clampedStart);
+      const toStr = toDateStr(endD);
+      const bucketShifts = filterShiftsByRange(shifts, fromStr, toStr);
+      const bucketDays = Math.round((endD - clampedStart) / (1000 * 60 * 60 * 24)) + 1;
+      const label = `${clampedStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${endD.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+      buckets.push({ label, shifts: bucketShifts, bucketDays });
+    }
+  } else {
+    // Monthly buckets
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - days);
+    // Walk month by month
+    let cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    while (cursor <= today) {
+      const monthStart = new Date(Math.max(cursor.getTime(), startDate.getTime()));
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0); // last day of month
+      const clampedEnd = monthEnd > today ? today : monthEnd;
+      const fromStr = toDateStr(monthStart);
+      const toStr = toDateStr(clampedEnd);
+      const bucketShifts = filterShiftsByRange(shifts, fromStr, toStr);
+      const bucketDays = Math.round((clampedEnd - monthStart) / (1000 * 60 * 60 * 24)) + 1;
+      const label = monthStart.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+      buckets.push({ label, shifts: bucketShifts, bucketDays });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+  }
+
+  // Compute P&L for each bucket
+  const { dailyCost } = computeDailyFixedCost(fixedCosts || []);
+  return buckets.map(b => {
+    let totalRevenue = 0, totalCogs = 0, totalGross = 0, totalLabor = 0;
+    for (const shift of b.shifts) {
+      const m = computeShiftMetrics(shift, recipes, ingredients);
+      totalRevenue += m.revenue;
+      totalCogs += m.totalCOGS;
+      totalGross += m.gross_profit;
+      totalLabor += m.labor_cost;
+    }
+    const operatingProfit = totalGross - totalLabor;
+    const fixedCostAllocation = dailyCost * b.bucketDays;
+    const netProfit = operatingProfit - fixedCostAllocation;
+    const grossMarginPct = totalRevenue > 0 ? (totalGross / totalRevenue) * 100 : 0;
+    return {
+      label: b.label,
+      totalRevenue, totalCogs, totalGross, totalLabor,
+      operatingProfit, fixedCostAllocation, netProfit,
+      shiftCount: b.shifts.length, bucketDays: b.bucketDays, grossMarginPct,
+    };
+  });
+}

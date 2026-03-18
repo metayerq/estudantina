@@ -13,7 +13,7 @@ import { filterShiftsByDays } from "./services/analyticsService.js";
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LineChart, Line } from "recharts";
 import { C, font, fontMono, fontSans, CATEGORIES, UNITS, PERIODS, uid, catColors, Badge, Metric, MarginBar, Modal, Btn, SaveIndicator } from "./components/shared.jsx";
 import Dashboard from "./components/Dashboard.jsx";
-import ShiftAnalytics from "./components/ShiftAnalytics.jsx";
+import FixedChargesPanel from "./components/FixedChargesPanel.jsx";
 // ─── Default Data ───────────────────────────────────────────────
 const DEFAULT_INGREDIENTS = [
   { id: "1", name: "Olisipo Coffee Beans", unit: "kg", pricePerUnit: 22.0, supplier: "Olisipo", wasteFactor: 1.0 },
@@ -1031,81 +1031,11 @@ function SimulatorConfigModal({ config, onChange, onGenerate, onCancel, recipes 
   );
 }
 
-// ─── Fixed Cost Form ─────────────────────────────────────────────
-const FIXED_COST_CATEGORIES = ["Rent", "Utilities", "Insurance", "Maintenance", "Marketing", "Subscriptions", "Other"];
-const FIXED_COST_FREQUENCIES = [{ value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" }, { value: "annual", label: "Annual" }];
-
-function FixedCostForm({ cost, onSave, onCancel }) {
-  const [f, setF] = useState({ ...cost, amount: cost.amount || "" });
-  const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
-  const valid = f.name.trim() && parseFloat(f.amount) > 0;
-  return (
-    <div>
-      <label style={{ display: "block", marginBottom: 14 }}>
-        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Name</span>
-        <input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="e.g. Loyer mensuel" style={inputStyle} />
-      </label>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-        <label>
-          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Amount (€)</span>
-          <input type="number" step="0.01" min="0" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} style={inputStyle} />
-        </label>
-        <label>
-          <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Frequency</span>
-          <select value={f.frequency} onChange={e => setF({ ...f, frequency: e.target.value })} style={inputStyle}>
-            {FIXED_COST_FREQUENCIES.map(fr => <option key={fr.value} value={fr.value}>{fr.label}</option>)}
-          </select>
-        </label>
-      </div>
-      <label style={{ display: "block", marginBottom: 14 }}>
-        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Category</span>
-        <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })} style={inputStyle}>
-          {FIXED_COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </label>
-      <label style={{ display: "block", marginBottom: 14 }}>
-        <span style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, display: "block", marginBottom: 4 }}>Notes (optional)</span>
-        <input value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} style={inputStyle} />
-      </label>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <Btn variant="secondary" onClick={onCancel} style={{ fontSize: 12 }}>Cancel</Btn>
-        <Btn onClick={() => valid && onSave({ ...f, amount: parseFloat(f.amount) || 0 })} style={{ fontSize: 12, opacity: valid ? 1 : 0.5 }}>
-          {cost.id ? "Update" : "Add"}
-        </Btn>
-      </div>
-    </div>
-  );
-}
-
 // ─── Settings ────────────────────────────────────────────────────
-function SettingsPanel({ settings, onChange, fixedCosts, onChangeFixedCosts, allData, onImportData }) {
+function SettingsPanel({ settings, onChange, allData, onImportData }) {
   const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
   const fileInputRef = useRef(null);
   const [importConfirm, setImportConfirm] = useState(null);
-  const [editingFC, setEditingFC] = useState(null);
-
-  // Fixed cost helpers
-  const activeFC = (fixedCosts || []).filter(fc => fc.active);
-  let fcMonthlyTotal = 0;
-  for (const fc of activeFC) {
-    if (fc.frequency === "monthly") fcMonthlyTotal += fc.amount;
-    else if (fc.frequency === "quarterly") fcMonthlyTotal += fc.amount / 3;
-    else if (fc.frequency === "annual") fcMonthlyTotal += fc.amount / 12;
-  }
-  const fcDailyCost = fcMonthlyTotal / 30;
-
-  const saveFC = (fc) => {
-    if (fc.id) {
-      onChangeFixedCosts(prev => prev.map(x => x.id === fc.id ? fc : x));
-    } else {
-      onChangeFixedCosts(prev => [...prev, { ...fc, id: `fc_${uid()}` }]);
-    }
-    setEditingFC(null);
-  };
-  const deleteFC = (id) => onChangeFixedCosts(prev => prev.filter(x => x.id !== id));
-  const toggleActiveFC = (id) => onChangeFixedCosts(prev => prev.map(x => x.id === id ? { ...x, active: !x.active } : x));
-  const blankFC = () => ({ id: "", name: "", amount: "", frequency: "monthly", category: "Other", active: true, notes: "" });
-  const smallBtnStyle = { background: "none", border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: fontSans, fontSize: 11, color: C.textMuted };
 
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
@@ -1160,47 +1090,6 @@ function SettingsPanel({ settings, onChange, fixedCosts, onChangeFixedCosts, all
         </label>
         <Btn variant="secondary" onClick={() => onChange(DEFAULT_SETTINGS)} style={{ fontSize: 12 }}>Reset to defaults</Btn>
       </div>
-
-      {/* Fixed Costs / Charges Fixes */}
-      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginTop: 20 }}>
-        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted }}>Fixed Costs (Charges Fixes)</div>
-
-        {activeFC.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16, padding: 12, background: C.cream, borderRadius: 8, border: `1px solid ${C.border}` }}>
-            <Metric label="Monthly total" value={`€${fcMonthlyTotal.toFixed(0)}`} unit="" size="small" />
-            <Metric label="Daily allocation" value={`€${fcDailyCost.toFixed(2)}`} unit="" size="small" />
-          </div>
-        )}
-
-        {(fixedCosts || []).map(fc => (
-          <div key={fc.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.border}`, opacity: fc.active ? 1 : 0.4 }}>
-            <div>
-              <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600 }}>{fc.name}</div>
-              <div style={{ fontFamily: fontMono, fontSize: 11, color: C.textMuted }}>€{fc.amount.toFixed(2)} / {fc.frequency} · {fc.category}</div>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => toggleActiveFC(fc.id)} style={smallBtnStyle}>{fc.active ? "Disable" : "Enable"}</button>
-              <button onClick={() => setEditingFC(fc)} style={smallBtnStyle}>Edit</button>
-              <button onClick={() => deleteFC(fc.id)} style={{ ...smallBtnStyle, color: C.red }}>×</button>
-            </div>
-          </div>
-        ))}
-
-        {(fixedCosts || []).length === 0 && (
-          <div style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 12 }}>No fixed costs configured. Add your rent, utilities, and other recurring costs to see true profitability.</div>
-        )}
-
-        <div style={{ marginTop: 14 }}>
-          <Btn variant="secondary" onClick={() => setEditingFC(blankFC())} style={{ fontSize: 12 }}>+ Add fixed cost</Btn>
-        </div>
-      </div>
-
-      {/* Fixed Cost Edit Modal */}
-      {editingFC && (
-        <Modal open={true} onClose={() => setEditingFC(null)} title={editingFC.id ? "Edit fixed cost" : "Add fixed cost"}>
-          <FixedCostForm cost={editingFC} onSave={saveFC} onCancel={() => setEditingFC(null)} />
-        </Modal>
-      )}
 
       {/* Data Management */}
       <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginTop: 20 }}>
@@ -1269,6 +1158,7 @@ export default function App() {
   const [supplierView, setSupplierView] = useState("list"); // "list" | "detail" | "drift"
   const [selectedSupplierId, setSelectedSupplierId] = useState(null);
   const [priceUpdateIngredient, setPriceUpdateIngredient] = useState(null);
+  const [dashboardPeriod, setDashboardPeriod] = useState(30);
   // Simulator config
   const [simConfig, setSimConfig] = useState(null);
   const [simConfigSaved, setSimConfigSaved] = useState(null);
@@ -1455,6 +1345,7 @@ export default function App() {
                 <button onClick={() => setView("recipes")} style={tabStyle(view === "recipes")}>Recipes</button>
                 <button onClick={() => { setView("shifts"); setShiftView("dashboard"); }} style={tabStyle(view === "shifts")}>Shifts</button>
                 <button onClick={() => setView("menu")} style={tabStyle(view === "menu")}>Menu</button>
+                <button onClick={() => setView("charges")} style={tabStyle(view === "charges")}>Charges</button>
                 <button onClick={() => { setView("suppliers"); setSupplierView("list"); }} style={tabStyle(view === "suppliers")}>
                   Suppliers{getActiveAlertCount(alerts) > 0 && <span style={{ marginLeft: 4, background: C.red, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>{getActiveAlertCount(alerts)}</span>}
                 </button>
@@ -1476,9 +1367,7 @@ export default function App() {
                 </>
               ) : view === "shifts" ? (
                 <>
-                  {shiftView === "dashboard" && <Btn variant="secondary" onClick={() => setShiftView("analytics")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>📊 Analytics</Btn>}
-                  {shiftView === "analytics" && <Btn variant="secondary" onClick={() => setShiftView("dashboard")} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>← Shifts</Btn>}
-                  <Btn variant="secondary" onClick={openSimConfig} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>🎲 Simulate 30 days</Btn>
+                  <Btn variant="secondary" onClick={openSimConfig} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.3)", fontSize: 11 }}>{"\uD83C\uDFB2"} Simulate 30 days</Btn>
                   <Btn onClick={handleNewShift} style={{ background: "#fff", color: C.green, fontSize: 12 }}>+ Log shift</Btn>
                 </>
               ) : view === "suppliers" ? (
@@ -1494,7 +1383,7 @@ export default function App() {
       </div>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 16px 40px" }}>
         {view === "dashboard" ? (
-          <Dashboard shifts={shifts} recipes={recipes} ingredients={ingredients} alerts={alerts} fixedCosts={fixedCosts} onLogShift={() => { setView("shifts"); handleNewShift(); }} onSimulate={openSimConfig} onNavigate={setView} />
+          <Dashboard shifts={shifts} recipes={recipes} ingredients={ingredients} alerts={alerts} fixedCosts={fixedCosts} dashboardPeriod={dashboardPeriod} onChangePeriod={setDashboardPeriod} onLogShift={() => { setView("shifts"); handleNewShift(); }} onSimulate={openSimConfig} onNavigate={setView} />
         ) : view === "recipes" ? (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, padding: 20, background: C.card, borderRadius: 10, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginBottom: 20 }}>
@@ -1508,9 +1397,7 @@ export default function App() {
             {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}><Btn onClick={() => setRecipeModal({ open: true, recipe: null })} style={{ marginTop: 12 }}>+ Create a recipe</Btn></div>}
           </>
         ) : view === "shifts" ? (
-          shiftView === "analytics" ? (
-            <ShiftAnalytics shifts={shifts} recipes={recipes} ingredients={ingredients} fixedCosts={fixedCosts} onBack={() => setShiftView("dashboard")} />
-          ) : shiftView === "dashboard" ? (
+          shiftView === "dashboard" ? (
             <ShiftDashboard shifts={shifts} recipes={recipes} ingredients={ingredients} onEdit={handleEditShift} onDelete={handleDeleteShift} onNew={handleNewShift} />
           ) : (
             <ShiftForm shift={editingShift} recipes={recipes} ingredients={ingredients} onSave={handleSaveShift} onCancel={() => { setEditingShift(null); setShiftView("dashboard"); }} shiftTemplates={shiftTemplates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={handleDeleteTemplate} onLogAsReal={handleLogAsReal} />
@@ -1523,8 +1410,10 @@ export default function App() {
           ) : (
             <SupplierList suppliers={suppliers} ingredients={ingredients} onSelectSupplier={(id) => { setSelectedSupplierId(id); setSupplierView("detail"); }} />
           )
+        ) : view === "charges" ? (
+          <FixedChargesPanel fixedCosts={fixedCosts} onChangeFixedCosts={setFixedCosts} shifts={shifts} recipes={recipes} ingredients={ingredients} />
         ) : view === "settings" ? (
-          <SettingsPanel settings={settings} onChange={setSettings} fixedCosts={fixedCosts} onChangeFixedCosts={setFixedCosts} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }} onImportData={handleImportData} />
+          <SettingsPanel settings={settings} onChange={setSettings} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }} onImportData={handleImportData} />
         ) : (
           <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} menuDateRange={menuDateRange} setMenuDateRange={setMenuDateRange} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
         )}

@@ -57,6 +57,28 @@ export function Btn({ children, onClick, variant = "primary", style: sx, disable
   const p = variant === "primary";
   return <button disabled={disabled} onClick={onClick} style={{ padding: "8px 18px", borderRadius: 6, border: p ? "none" : `1px solid ${C.border}`, background: p ? C.green : "transparent", color: p ? "#fff" : C.text, fontFamily: fontSans, fontSize: 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, ...sx }}>{children}</button>;
 }
+/**
+ * Reusable P&L waterfall table.
+ * rows: [{ label, value, line?, bold?, final? }]
+ * maxWidth: optional CSS maxWidth (default 400)
+ */
+export function PLWaterfall({ rows, maxWidth = 400 }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0, maxWidth }}>
+      {rows.map((r, i) => (
+        <div key={i}>
+          {r.line && <div style={{ borderTop: r.final ? `2px solid ${C.text}` : `1px solid ${C.border}`, marginBottom: 6, marginTop: 4 }} />}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0" }}>
+            <span style={{ fontFamily: fontSans, fontSize: 14, fontWeight: r.bold ? 700 : 400, color: r.final ? (r.value >= 0 ? C.green : C.red) : C.text }}>{r.label}</span>
+            <span style={{ fontFamily: fontMono, fontSize: 14, fontWeight: r.bold ? 700 : 400, color: r.value < 0 ? C.red : (r.final && r.value >= 0 ? C.green : C.text) }}>
+              {r.value < 0 ? `-\u20AC${Math.abs(r.value).toFixed(0)}` : `\u20AC${r.value.toFixed(0)}`}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 export function SaveIndicator({ status }) {
   if (!status) return null;
   const m = { saving: { t: "…", c: C.amber }, saved: { t: "✓ Saved", c: "#8FD5A6" }, error: { t: "Error", c: C.red } };
