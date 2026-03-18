@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { C, fontSans, fontMono, CATEGORIES, Btn } from "./shared.jsx";
 import { saveOnboarding } from "../services/authService.js";
+import { savePosConfig, DEFAULT_POS_CONFIG } from "../services/posService.js";
+import PosSetup from "./PosSetup.jsx";
 
-const STEPS = ["cafe", "team", "menu", "tracking"];
+const STEPS = ["cafe", "team", "menu", "pos", "tracking"];
 
 const cardStyle = {
   background: C.card, borderRadius: 10, padding: 32,
@@ -22,15 +24,33 @@ export default function Onboarding({ userName, onComplete }) {
     teamSize: 2,
     avgHourlyRate: 9.5,
     categories: ["Coffee"],
+    posProvider: null,
     tracksAlready: null,
   });
+  const [posConfig, setPosConfig] = useState({ ...DEFAULT_POS_CONFIG });
 
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const prev = () => setStep((s) => Math.max(s - 1, 0));
 
+  const handleSkipPos = () => {
+    setPosConfig({ ...DEFAULT_POS_CONFIG });
+    update("posProvider", null);
+    next();
+  };
+
+  const handlePosChange = (newConfig) => {
+    setPosConfig(newConfig);
+    update("posProvider", newConfig.provider);
+  };
+
   const handleFinish = async () => {
+    // Save onboarding data (provider name only, not API key)
     await saveOnboarding(data);
+    // Save POS config separately (contains API key)
+    if (posConfig.provider && posConfig.connected) {
+      await savePosConfig(posConfig);
+    }
     onComplete(data);
   };
 
@@ -162,6 +182,18 @@ export default function Onboarding({ userName, onComplete }) {
         {step === 3 && (
           <div>
             <h2 style={{ fontFamily: fontSans, fontSize: 22, fontWeight: 700, margin: "0 0 6px" }}>
+              Connect your POS
+            </h2>
+            <p style={{ color: C.textMuted, fontSize: 14, margin: "0 0 20px" }}>
+              Import sales data automatically from your point-of-sale.
+            </p>
+            <PosSetup config={posConfig} onChange={handlePosChange} />
+          </div>
+        )}
+
+        {step === 4 && (
+          <div>
+            <h2 style={{ fontFamily: fontSans, fontSize: 22, fontWeight: 700, margin: "0 0 6px" }}>
               One last thing
             </h2>
             <p style={{ color: C.textMuted, fontSize: 14, margin: "0 0 24px" }}>
@@ -196,24 +228,40 @@ export default function Onboarding({ userName, onComplete }) {
         )}
 
         {/* Navigation */}
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 28 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28 }}>
           {step > 0 ? (
             <Btn variant="secondary" onClick={prev} style={{ fontSize: 13 }}>← Back</Btn>
           ) : <div />}
 
-          {step < STEPS.length - 1 ? (
-            <Btn onClick={next} style={{ fontSize: 13 }}
-              disabled={step === 0 && !data.cafeName.trim()}
-            >
-              Continue →
-            </Btn>
-          ) : (
-            <Btn onClick={handleFinish} style={{ fontSize: 13 }}
-              disabled={data.tracksAlready === null}
-            >
-              Launch Café Pilot 🚀
-            </Btn>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Skip link on POS step */}
+            {step === 3 && (
+              <button
+                onClick={handleSkipPos}
+                style={{
+                  background: "none", border: "none", color: C.textMuted,
+                  fontFamily: fontSans, fontSize: 12, cursor: "pointer",
+                  textDecoration: "underline", padding: 0,
+                }}
+              >
+                Skip for now
+              </button>
+            )}
+
+            {step < STEPS.length - 1 ? (
+              <Btn onClick={next} style={{ fontSize: 13 }}
+                disabled={step === 0 && !data.cafeName.trim()}
+              >
+                Continue →
+              </Btn>
+            ) : (
+              <Btn onClick={handleFinish} style={{ fontSize: 13 }}
+                disabled={data.tracksAlready === null}
+              >
+                Launch Café Pilot 🚀
+              </Btn>
+            )}
+          </div>
         </div>
       </div>
     </div>

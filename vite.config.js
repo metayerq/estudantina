@@ -17,10 +17,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: true,
           rewrite: (path) => path.replace(/^\/api\/revolut/, '/api/1.0'),
-          headers: {
-            Authorization: `Bearer ${env.REVOLUT_SECRET_KEY}`,
-            Accept: 'application/json',
-          },
+          // Authorization header passed through from client request
         },
       },
     },

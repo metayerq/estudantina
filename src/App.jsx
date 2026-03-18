@@ -13,6 +13,8 @@ import { filterShiftsByDays } from "./services/analyticsService.js";
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LineChart, Line } from "recharts";
 import { C, font, fontMono, fontSans, CATEGORIES, UNITS, PERIODS, uid, catColors, Badge, Metric, MarginBar, Modal, Btn, SaveIndicator } from "./components/shared.jsx";
 import Dashboard from "./components/Dashboard.jsx";
+import PosSetup from "./components/PosSetup.jsx";
+import { getPosConfig, savePosConfig, DEFAULT_POS_CONFIG } from "./services/posService.js";
 import FixedChargesPanel from "./components/FixedChargesPanel.jsx";
 // ─── Default Data ───────────────────────────────────────────────
 const DEFAULT_INGREDIENTS = [
@@ -1039,7 +1041,7 @@ function SimulatorConfigModal({ config, onChange, onGenerate, onCancel, recipes 
 }
 
 // ─── Settings ────────────────────────────────────────────────────
-function SettingsPanel({ settings, onChange, allData, onImportData }) {
+function SettingsPanel({ settings, onChange, allData, onImportData, posConfig, onPosChange, onPosDisconnect }) {
   const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 6, fontFamily: fontMono, fontSize: 14, background: C.cream, boxSizing: "border-box" };
   const fileInputRef = useRef(null);
   const [importConfirm, setImportConfirm] = useState(null);
@@ -1096,6 +1098,24 @@ function SettingsPanel({ settings, onChange, allData, onImportData }) {
           <span style={{ fontFamily: fontSans, fontSize: 13 }}>Auto-snapshot on shift save</span>
         </label>
         <Btn variant="secondary" onClick={() => onChange(DEFAULT_SETTINGS)} style={{ fontSize: 12 }}>Reset to defaults</Btn>
+      </div>
+
+      {/* POS Integration */}
+      <div style={{ background: C.card, borderRadius: 10, padding: 20, boxShadow: C.shadow, border: `1px solid ${C.border}`, marginTop: 20 }}>
+        <div style={{ fontFamily: fontSans, fontSize: 13, fontWeight: 600, marginBottom: 16, textTransform: "uppercase", letterSpacing: 0.5, color: C.textMuted }}>POS Integration</div>
+        <p style={{ fontFamily: fontSans, fontSize: 12, color: C.textMuted, marginBottom: 14 }}>Connect your point-of-sale to import sales data automatically.</p>
+        <PosSetup config={posConfig} onChange={onPosChange} compact />
+        {posConfig.connected && posConfig.connectedAt && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "8px 12px", background: C.greenPale, borderRadius: 6 }}>
+            <span style={{ fontFamily: fontSans, fontSize: 12, color: C.green }}>
+              ✓ Connected since {new Date(posConfig.connectedAt).toLocaleDateString()}
+            </span>
+            <button onClick={onPosDisconnect} style={{
+              background: "none", border: "none", color: C.red, fontFamily: fontSans,
+              fontSize: 11, cursor: "pointer", textDecoration: "underline",
+            }}>Disconnect</button>
+          </div>
+        )}
       </div>
 
       {/* Data Management */}
@@ -1160,6 +1180,7 @@ export default function App({ user, onLogout, cafeName }) {
   // v6 new state
   const [suppliers, setSuppliers] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [posConfig, setPosConfig] = useState({ ...DEFAULT_POS_CONFIG });
   const [alerts, setAlerts] = useState([]);
   const [fixedCosts, setFixedCosts] = useState([]);
   const [supplierView, setSupplierView] = useState("list"); // "list" | "detail" | "drift"
@@ -1199,6 +1220,8 @@ export default function App({ user, onLogout, cafeName }) {
       } catch (e) { console.warn(e); }
       // Load saved simulator config
       try { const sc = await store.get("estudantina-sim-config"); if (sc) setSimConfigSaved(JSON.parse(sc)); } catch {}
+      // Load POS config
+      try { const pc = await getPosConfig(); if (pc) setPosConfig(pc); } catch {}
       setLoaded(true);
     })();
   }, []);
@@ -1424,7 +1447,7 @@ export default function App({ user, onLogout, cafeName }) {
         ) : view === "charges" ? (
           <FixedChargesPanel fixedCosts={fixedCosts} onChangeFixedCosts={setFixedCosts} shifts={shifts} recipes={recipes} ingredients={ingredients} />
         ) : view === "settings" ? (
-          <SettingsPanel settings={settings} onChange={setSettings} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }} onImportData={handleImportData} />
+          <SettingsPanel settings={settings} onChange={setSettings} allData={{ ingredients, recipes, shifts, shift_templates: shiftTemplates, suppliers, settings, alerts, fixed_costs: fixedCosts }} onImportData={handleImportData} posConfig={posConfig} onPosChange={(pc) => { setPosConfig(pc); savePosConfig(pc); }} onPosDisconnect={() => { const empty = { ...DEFAULT_POS_CONFIG }; setPosConfig(empty); savePosConfig(empty); }} />
         ) : (
           <MenuPerformanceView recipes={recipes} ingredients={ingredients} shifts={shifts} menuSort={menuSort} setMenuSort={setMenuSort} menuFilterCat={menuFilterCat} setMenuFilterCat={setMenuFilterCat} menuFilterQuadrant={menuFilterQuadrant} setMenuFilterQuadrant={setMenuFilterQuadrant} menuDateRange={menuDateRange} setMenuDateRange={setMenuDateRange} onNavigateToShifts={() => { setView("shifts"); setShiftView("dashboard"); }} />
         )}
