@@ -71,6 +71,7 @@ export async function testRevolutConnection(apiKey) {
     if (status === 401) return { success: false, error: "Invalid API key. Please check and try again." };
     if (status === 403) return { success: false, error: "Access denied. Make sure your key has merchant permissions." };
     if (status === 429) return { success: false, error: "Too many requests. Please wait a moment and try again." };
+    if (status === 502) return { success: false, error: "Revolut returned 502. Your Merchant API account may not be fully activated — check your Revolut Business dashboard." };
 
     return { success: false, error: `Connection failed (HTTP ${status}).${detail ? " " + detail : ""} Please try again.` };
   } catch (err) {
