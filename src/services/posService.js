@@ -19,9 +19,48 @@ export const DEFAULT_POS_CONFIG = {
 };
 
 /**
+ * Call the Revolut Merchant API.
+ * Dev: Vite proxy (/api/revolut → merchant.revolut.com/api)
+ * Prod: Vercel serverless function (/api/revolut-proxy)
+ */
+async function callRevolut(apiKey, { endpoint, method = "GET", body } = {}) {
+  const isDev = import.meta.env.DEV;
+
+  if (isDev) {
+    const fetchOpts = {
+      method,
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        Accept: "application/json",
+        "Revolut-Api-Version": "2024-09-01",
+      },
+    };
+    if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
+      fetchOpts.headers["Content-Type"] = "application/json";
+      fetchOpts.body = JSON.stringify(body);
+    }
+    // Vite proxy rewrites /api/revolut → /api on merchant.revolut.com
+    return fetch(`/api/revolut${endpoint}`, fetchOpts);
+  }
+
+  // Production: Vercel serverless proxy
+  return fetch("/api/revolut-proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apiKey: apiKey.trim(),
+      endpoint,
+      method,
+      body,
+    }),
+  });
+}
+
+/**
  * Test Revolut Merchant API connection.
- * Uses Vite proxy in dev (/api/revolut → merchant.revolut.com/api/1.0)
- * and Vercel serverless function in production (/api/revolut-proxy).
+ * Creates a minimal 1-cent test order to validate the API key,
+ * then immediately cancels it. We use POST because Revolut's
+ * GET /api/orders endpoint has a known server-side 502 bug.
  */
 export async function testRevolutConnection(apiKey) {
   if (!apiKey || !apiKey.trim()) {
@@ -29,49 +68,40 @@ export async function testRevolutConnection(apiKey) {
   }
 
   try {
-    // In production (Vercel), use the serverless proxy
-    // In dev, use the Vite proxy which forwards to Revolut directly
-    const isDev = import.meta.env.DEV;
-    let response;
+    // Step 1: Create a minimal test order (1 cent) to validate the key
+    const createRes = await callRevolut(apiKey, {
+      endpoint: "/orders",
+      method: "POST",
+      body: { amount: 1, currency: "EUR" },
+    });
 
-    if (isDev) {
-      // Vite proxy rewrites /api/revolut → /api on merchant.revolut.com
-      response = await fetch("/api/revolut/orders?limit=1", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          Accept: "application/json",
-          "Revolut-Api-Version": "2024-09-01",
-        },
-      });
-    } else {
-      // Production: call Vercel serverless proxy
-      response = await fetch("/api/revolut-proxy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apiKey: apiKey.trim(),
-          endpoint: "/api/1.0/orders?limit=1",
-        }),
-      });
-    }
-
-    if (response.ok) {
+    if (createRes.ok) {
+      // Key is valid — clean up by cancelling the test order
+      try {
+        const order = await createRes.json();
+        if (order.id) {
+          await callRevolut(apiKey, {
+            endpoint: `/orders/${order.id}/cancel`,
+            method: "POST",
+          });
+        }
+      } catch {
+        // Cleanup failure is non-critical
+      }
       return { success: true };
     }
 
-    const status = response.status;
-    // Try to extract Revolut's actual error message for better debugging
+    // Handle error responses
+    const status = createRes.status;
     let detail = "";
     try {
-      const body = await response.json();
-      detail = body.message || body.error || "";
+      const errBody = await createRes.json();
+      detail = errBody.message || errBody.error || "";
     } catch {}
 
     if (status === 401) return { success: false, error: "Invalid API key. Please check and try again." };
     if (status === 403) return { success: false, error: "Access denied. Make sure your key has merchant permissions." };
     if (status === 429) return { success: false, error: "Too many requests. Please wait a moment and try again." };
-    if (status === 502) return { success: false, error: "Revolut returned 502. Your Merchant API account may not be fully activated — check your Revolut Business dashboard." };
 
     return { success: false, error: `Connection failed (HTTP ${status}).${detail ? " " + detail : ""} Please try again.` };
   } catch (err) {

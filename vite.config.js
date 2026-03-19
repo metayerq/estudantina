@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
           target: 'https://merchant.revolut.com',
           changeOrigin: true,
           secure: true,
-          rewrite: (path) => path.replace(/^\/api\/revolut/, '/api/1.0'),
+          rewrite: (path) => path.replace(/^\/api\/revolut/, '/api'),
           // Authorization header passed through from client request
         },
       },
