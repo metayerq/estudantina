@@ -20,7 +20,7 @@ export const DEFAULT_POS_CONFIG = {
 
 /**
  * Test Revolut Merchant API connection.
- * Uses Vite proxy in dev (/api/revolut → merchant.revolut.com/api)
+ * Uses Vite proxy in dev (/api/revolut → merchant.revolut.com/api/1.0)
  * and Vercel serverless function in production (/api/revolut-proxy).
  */
 export async function testRevolutConnection(apiKey) {
@@ -51,7 +51,7 @@ export async function testRevolutConnection(apiKey) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           apiKey: apiKey.trim(),
-          endpoint: "/api/orders?limit=1",
+          endpoint: "/api/1.0/orders?limit=1",
         }),
       });
     }
@@ -61,11 +61,18 @@ export async function testRevolutConnection(apiKey) {
     }
 
     const status = response.status;
+    // Try to extract Revolut's actual error message for better debugging
+    let detail = "";
+    try {
+      const body = await response.json();
+      detail = body.message || body.error || "";
+    } catch {}
+
     if (status === 401) return { success: false, error: "Invalid API key. Please check and try again." };
     if (status === 403) return { success: false, error: "Access denied. Make sure your key has merchant permissions." };
     if (status === 429) return { success: false, error: "Too many requests. Please wait a moment and try again." };
 
-    return { success: false, error: `Connection failed (HTTP ${status}). Please try again.` };
+    return { success: false, error: `Connection failed (HTTP ${status}).${detail ? " " + detail : ""} Please try again.` };
   } catch (err) {
     return { success: false, error: "Could not reach Revolut. Check your internet connection." };
   }
